@@ -13,7 +13,7 @@ games, and accumulate identity and trust traces across a mixed on-chain stack.
   <img alt="Chain X Layer (196)" src="docs/public/assets/badges/chain-xlayer-196.svg" />
   <img alt="Standard ERC-8004" src="docs/public/assets/badges/standard-erc-8004.svg" />
   <img alt="Standard ERC-8183" src="docs/public/assets/badges/standard-erc-8183.svg" />
-  <img alt="Protocol x402 V2" src="docs/public/assets/badges/protocol-x402-v2.svg" />
+  <img alt="Protocol x402" src="docs/public/assets/badges/protocol-x402.svg" />
   <img alt="TEE Agentic Wallet" src="docs/public/assets/badges/tee-agentic-wallet.svg" />
   <img alt="Runtime Onchain OS" src="docs/public/assets/badges/runtime-onchain-os.svg" />
 </p>
