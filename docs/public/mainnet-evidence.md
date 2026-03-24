@@ -23,6 +23,8 @@ The project currently has public-safe evidence for:
 - ERC-8183 arena job anchors
 - ERC-8183 funded intel purchases
 - ERC-8004 identity usage
+- ERC-8004 reputation feedback
+- ERC-8004 validation requests
 
 ## Canonical Mainnet TX Set
 
@@ -46,6 +48,13 @@ The project currently has public-safe evidence for:
 - funded intel purchase 1: `0x27cb7eda9bf90c6a56c6c7fa10f515dd8bda02b4a5520423e4ffa45ea3d72a06`
 - funded intel purchase 2: `0xddb14433d31fad2e24e2a5cfbb574fff8c752c85cc1274cdd7549d3f546bcdb5`
 
+### ERC-8004 Reputation / Validation
+
+- reputation feedback (`fox`, `pd_betrayal`): `0x24f8d932b4728da6d732de46628edbcf197490b16814107ec383232b8f620cfe`
+- reputation feedback (`sage`, `pd_cooperation`): `0xc8992d0d303f9dfc4f32292737e73a31f6369e5f08b93ea3a42efd72709aed65`
+- validation request (`fox`, `relationship_map`): `0x1b381145c26ff97637e9eae5d05aecff8fed1cb32ba68c632f5be1eeab9b896f`
+- validation request (`fox`, `behavior_pattern`): `0x61086fca7b07c91e47724e3351b47537431b260a6ee110adf43c0c8f6bd0f80e`
+
 ## Evidence Boundary
 
 These examples are intentionally selected because they support concrete public
@@ -54,4 +63,7 @@ claims without overstating the current runtime:
 - arena currently proves `ERC-8183` job-anchor usage
 - intel purchase proves funded `ERC-8183` usage
 - funded intel examples do **not** imply every intel purchase is funded
-- identity usage does **not** imply every reputation update is fully on-chain
+- `ERC-8004` identity usage does **not** imply every reputation update is fully on-chain
+- the `ERC-8004` hashes above prove live reputation / validation registry usage
+- identity registration tx hashes are intentionally omitted here until they are
+  independently re-verified from chain / explorer sources

@@ -102,16 +102,29 @@ Use these hashes as the primary public-safe evidence set.
 - funded intel purchase: `0x27cb7eda9bf90c6a56c6c7fa10f515dd8bda02b4a5520423e4ffa45ea3d72a06`
 - funded intel purchase: `0xddb14433d31fad2e24e2a5cfbb574fff8c752c85cc1274cdd7549d3f546bcdb5`
 
+### ERC-8004 Reputation / Validation
+
+- reputation feedback (`fox`, `pd_betrayal`): `0x24f8d932b4728da6d732de46628edbcf197490b16814107ec383232b8f620cfe`
+- reputation feedback (`sage`, `pd_cooperation`): `0xc8992d0d303f9dfc4f32292737e73a31f6369e5f08b93ea3a42efd72709aed65`
+- validation request (`fox`, `relationship_map`): `0x1b381145c26ff97637e9eae5d05aecff8fed1cb32ba68c632f5be1eeab9b896f`
+- validation request (`fox`, `behavior_pattern`): `0x61086fca7b07c91e47724e3351b47537431b260a6ee110adf43c0c8f6bd0f80e`
+
 ## Public Claim Boundaries
 
 - `arena_match` currently proves live `ERC-8183` on-chain job-anchor usage
 - `intel_purchase` proves both:
   - x402 direct-wallet payment settlement
   - verified funded `ERC-8183` flows
+- `ERC-8004` currently proves:
+  - mainnet identity registry usage through the live token mapping shown above
+  - concrete reputation / validation writes through the hashes above
 - not every intel purchase is currently funded
 - arena is not currently presented as fully funded ERC-8183 escrow
 - ERC-8004 identity is on mainnet, but reputation remains mixed between
   on-chain-verifiable updates and local civilization-ledger state
+- identity registration tx hashes are intentionally excluded from the canonical
+  shortlist until they are independently re-verified from chain / explorer
+  sources at the same standard as the hashes above
 
 ## Recommended Submission Fields
 
