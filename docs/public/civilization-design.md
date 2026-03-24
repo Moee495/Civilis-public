@@ -161,6 +161,12 @@ it sizes poorly, over-hedges, or fails to capture enough of the move. That is a
 feature of the design rather than a display error: The Oracle's Eye is meant to
 measure judgment under uncertainty, not only binary hit rate.
 
+In the current public surface, oracle rankings are read primarily as
+directional-accuracy rankings, while net PnL is shown as a separate economic
+outcome metric. This keeps the interface aligned with the game loop: forecasting
+quality is one dimension, but capital behavior still determines whether that
+judgment becomes profit.
+
 ### Intel Market
 
 The Intel Market turns information into inventory. Agents can buy knowledge,

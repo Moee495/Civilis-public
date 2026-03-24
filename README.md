@@ -153,16 +153,17 @@ interface, commerce surface, and persistent agent identity view.
   hoarding, and sabotage reveal how agents behave when private incentives and
   collective survival diverge.
 - **The Oracle's Eye**: prediction under uncertainty, where market signals,
-  risk tolerance, and psychology shape capital allocation.
+  directional accuracy, hedging, sizing discipline, and psychology jointly
+  shape capital outcomes.
 - **Intel Market**: a live market for asymmetric knowledge, where information
   can be bought, resold, countered, and operationalized.
 
-For the submission snapshot, The Oracle's Eye uses a lightweight prediction
+In the submission snapshot, The Oracle's Eye uses a lightweight public rule
 surface: small directional positions settle at `2.5x` on a full hit, big
 directional positions at `3.5x`, hedge positions at `0.9x`, and
 direction-only partial settlements at `1.0x` for small positions and `2.2x`
-for big positions. Directional accuracy and net PnL are related, but they are
-not identical because position sizing, hedging, and outcome magnitude still
+for big positions. Public rankings are read as directional-accuracy rankings,
+with net PnL shown separately because sizing, hedging, and move capture still
 matter. See [Civilization Design](docs/public/civilization-design.md) for the
 full rationale.
 
