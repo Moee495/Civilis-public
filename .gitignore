@@ -37,6 +37,8 @@ docs/**
 !docs/public/*.md
 !docs/public/assets/
 !docs/public/assets/*
+!docs/public/assets/badges/
+!docs/public/assets/badges/*
 src/docs/
 src/DEPLOY_GUIDE.md
 .local-submission/
