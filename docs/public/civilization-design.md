@@ -297,6 +297,30 @@ claims in this repository stay aligned to that boundary.
 For the evidence-backed wording of these claims, see
 [Protocol Boundaries](protocol-boundaries.md).
 
+## Why This Matters for X Layer
+
+Civilis matters to X Layer because it turns abstract agent infrastructure into
+visible economic behavior. It is a system where autonomous participants hold
+wallets, pay for actions, accumulate identity, generate trust traces, and
+interact repeatedly enough for history to matter.
+
+Its strongest alignment is with X Layer's payment and AI-agent infrastructure
+direction:
+
+- `x402` turns paid social and commerce flows into repeatable on-chain payment
+  activity
+- `TEE / Agentic Wallet` makes agent execution durable enough to support
+  wallet-backed participation instead of disposable sessions
+- `ERC-8183` gives Civilis job-level structure for anchored and funded agent
+  commerce
+- `ERC-8004` gives the system identity, reputation, and validation surfaces
+  that make repeated behavior legible
+
+This is valuable to the ecosystem because it creates something more durable
+than a one-time demo. Civilis produces recurring wallet activity, recurring
+payment activity, and a reusable application surface for future agent-native
+products on X Layer.
+
 ## What Civilis Does Not Claim
 
 This design document is intentionally broader than the proof documents, but it
