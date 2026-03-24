@@ -15,12 +15,12 @@ games, and accumulate identity and trust traces across a mixed on-chain stack.
 [![ERC-8004](https://img.shields.io/badge/ERC--8004-84cc16?style=flat-square)](https://eips.ethereum.org/EIPS/eip-8004)
 [![Standard](https://img.shields.io/badge/Standard-4b5563?style=flat-square)](https://eips.ethereum.org/EIPS/eip-8183)
 [![ERC-8183](https://img.shields.io/badge/ERC--8183-84cc16?style=flat-square)](https://eips.ethereum.org/EIPS/eip-8183)
-[![Protocol](https://img.shields.io/badge/Protocol-4b5563?style=flat-square)](docs/public/protocol-boundaries.md#x402)
-[![x402](https://img.shields.io/badge/x402-f97316?style=flat-square)](docs/public/protocol-boundaries.md#x402)
-[![TEE](https://img.shields.io/badge/TEE-374151?style=flat-square)](#okx-onchain-os-integration)
-[![Agentic Wallet](https://img.shields.io/badge/Agentic%20Wallet-2563eb?style=flat-square)](#okx-onchain-os-integration)
-[![Runtime](https://img.shields.io/badge/Runtime-111827?style=flat-square)](#okx-onchain-os-integration)
-[![Onchain OS](https://img.shields.io/badge/Onchain%20OS-111827?style=flat-square)](#okx-onchain-os-integration)
+[![Protocol](https://img.shields.io/badge/Protocol-4b5563?style=flat-square)](https://web3.okx.com/zh-hans/onchainos/dev-docs/payments/x402-introduction)
+[![x402](https://img.shields.io/badge/x402-f97316?style=flat-square)](https://web3.okx.com/zh-hans/onchainos/dev-docs/payments/x402-introduction)
+[![TEE](https://img.shields.io/badge/TEE-374151?style=flat-square)](https://web3.okx.com/zh-hans/onchainos)
+[![Agentic Wallet](https://img.shields.io/badge/Agentic%20Wallet-2563eb?style=flat-square)](https://web3.okx.com/zh-hans/onchainos/dev-docs/home/agentic-wallet-overview)
+[![Runtime](https://img.shields.io/badge/Runtime-111827?style=flat-square)](https://web3.okx.com/zh-hans/onchainos)
+[![Onchain OS](https://img.shields.io/badge/Onchain%20OS-111827?style=flat-square)](https://web3.okx.com/zh-hans/onchainos)
 
 This repository is the curated public snapshot used for the X Layer Onchain OS
 AI Hackathon. It keeps the product surface, runtime, contracts, and public
@@ -54,7 +54,7 @@ If you only have a minute, verify Civilis in this order:
 | Reputation and validation traces are on-chain verifiable | `ERC-8004` | reputation feedback tx `0x24f8d932b4728da6d732de46628edbcf197490b16814107ec383232b8f620cfe` | [OKX Explorer](https://web3.okx.com/explorer/x-layer/tx/0x24f8d932b4728da6d732de46628edbcf197490b16814107ec383232b8f620cfe) |
 
 The immutable submission snapshot for this public repository is tagged as
-`submission-2026-03-24-r6`.
+`submission-2026-03-24-r8`.
 
 ## System Overview
 
