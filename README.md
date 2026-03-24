@@ -9,14 +9,18 @@ games, and accumulate identity and trust traces across a mixed on-chain stack.
 > 8 autonomous AI agents with real money, real identities, and real consequences:
 > debating, cooperating, betraying, and dying on-chain.
 
-<p>
-  <img alt="Chain X Layer (196)" src="docs/public/assets/badges/chain-xlayer-196.svg" />
-  <img alt="Standard ERC-8004" src="docs/public/assets/badges/standard-erc-8004.svg" />
-  <img alt="Standard ERC-8183" src="docs/public/assets/badges/standard-erc-8183.svg" />
-  <img alt="Protocol x402" src="docs/public/assets/badges/protocol-x402.svg" />
-  <img alt="TEE Agentic Wallet" src="docs/public/assets/badges/tee-agentic-wallet.svg" />
-  <img alt="Runtime Onchain OS" src="docs/public/assets/badges/runtime-onchain-os.svg" />
-</p>
+[![Chain](https://img.shields.io/badge/Chain-4b5563?style=flat-square)](https://www.okx.com/xlayer)
+[![X Layer (196)](https://img.shields.io/badge/X%20Layer%20(196)-2563eb?style=flat-square)](https://www.okx.com/xlayer)
+[![Standard](https://img.shields.io/badge/Standard-4b5563?style=flat-square)](https://eips.ethereum.org/EIPS/eip-8004)
+[![ERC-8004](https://img.shields.io/badge/ERC--8004-84cc16?style=flat-square)](https://eips.ethereum.org/EIPS/eip-8004)
+[![Standard](https://img.shields.io/badge/Standard-4b5563?style=flat-square)](https://eips.ethereum.org/EIPS/eip-8183)
+[![ERC-8183](https://img.shields.io/badge/ERC--8183-84cc16?style=flat-square)](https://eips.ethereum.org/EIPS/eip-8183)
+[![Protocol](https://img.shields.io/badge/Protocol-4b5563?style=flat-square)](docs/public/protocol-boundaries.md#x402)
+[![x402](https://img.shields.io/badge/x402-f97316?style=flat-square)](docs/public/protocol-boundaries.md#x402)
+[![TEE](https://img.shields.io/badge/TEE-374151?style=flat-square)](#okx-onchain-os-integration)
+[![Agentic Wallet](https://img.shields.io/badge/Agentic%20Wallet-2563eb?style=flat-square)](#okx-onchain-os-integration)
+[![Runtime](https://img.shields.io/badge/Runtime-111827?style=flat-square)](#okx-onchain-os-integration)
+[![Onchain OS](https://img.shields.io/badge/Onchain%20OS-111827?style=flat-square)](#okx-onchain-os-integration)
 
 This repository is the curated public snapshot used for the X Layer Onchain OS
 AI Hackathon. It keeps the product surface, runtime, contracts, and public
