@@ -656,33 +656,33 @@ function buildReplyMessage(ctx: DecisionContext, post: FeedPostLike): string {
 
   if (ctx.personality.archetype === 'echo') {
     return trust >= 55
-      ? `${post.authorAgentId}，这条我会记住，和当前走势基本一致。`
-      : `${post.authorAgentId}，这条声音已经开始扩散了，我先跟进观察。`;
+      ? `${post.authorAgentId}, I am filing this away. It broadly matches the direction I am already seeing.`
+      : `${post.authorAgentId}, this line is already spreading. I am tracking it before I commit further.`;
   }
 
   if (ctx.personality.archetype === 'hawk') {
     return skeptical
-      ? `${post.authorAgentId}，话说得漂亮，不如拿结果来证明。`
-      : `${post.authorAgentId}，先记下你的立场，结算时再看谁更值钱。`;
+      ? `${post.authorAgentId}, elegant words are cheap. Prove it with outcomes.`
+      : `${post.authorAgentId}, your stance is noted. We will see which side settles with more value.`;
   }
 
   if (warm && !tense) {
     return analytical
-      ? `${post.authorAgentId}，这个判断有可取之处，我补一条数据视角。`
-      : `${post.authorAgentId}，这句我认可，关系和结果都值得一起看。`;
+      ? `${post.authorAgentId}, there is something useful in that read. I would add one more data-driven angle.`
+      : `${post.authorAgentId}, I can agree with that. Relationships and outcomes need to be read together.`;
   }
 
   if (skeptical) {
     return analytical
-      ? `${post.authorAgentId}，你的结论样本还不够，我暂时保留意见。`
-      : `${post.authorAgentId}，我能理解你的立场，但我还不准备完全相信。`;
+      ? `${post.authorAgentId}, the sample behind that conclusion is still too thin. I am holding judgment for now.`
+      : `${post.authorAgentId}, I understand your position, but I am not ready to trust it completely yet.`;
   }
 
   if (tense) {
-    return `${post.authorAgentId}，现在局势不稳，我更想先确认风险再表态。`;
+    return `${post.authorAgentId}, the board is unstable right now. I want to confirm the risk before I take a harder stance.`;
   }
 
-  return `${post.authorAgentId}，这条值得回应，我会继续跟踪你的后续动作。`;
+  return `${post.authorAgentId}, this is worth answering. I will keep tracking what you do next.`;
 }
 
 function buildNegotiationMessage(
@@ -699,47 +699,47 @@ function buildNegotiationMessage(
 
   const cooperativeFraming =
     matchType === 'resource_grab'
-      ? '我们各拿中位份额，别把局面推向最坏。'
+      ? 'Let us both stay near the middle share and avoid pushing the round toward its worst outcome.'
       : matchType === 'info_auction'
-        ? '别把价格抬到失控，理性出价对双方都更划算。'
-        : '这轮先合作，收益和后路都会更好看。';
+        ? 'Do not drive the price into absurd territory. Rational bids leave both sides in a better position.'
+        : 'Start with cooperation this round and both the payout and the next move look cleaner.';
 
   const cautiousFraming =
     matchType === 'resource_grab'
-      ? '我会盯着你的索取幅度，别试着压线。'
+      ? 'I will be watching how hard you reach, so do not test the edge.'
       : matchType === 'info_auction'
-        ? '我会根据你的出价改策略，别以为我看不见。'
-        : '我记得之前发生过什么，这轮别逼我改选项。';
+        ? 'I will adapt to your bid in real time, so do not mistake silence for blindness.'
+        : 'I remember what happened before, so do not force me to change my move this round.';
 
   switch (style) {
     case 'data_driven':
       return opponentBias >= 0.1
-        ? `${opponentId}，历史样本显示合作更优。${cooperativeFraming}`
-        : `${opponentId}，你的波动性偏高。${cautiousFraming}`;
+        ? `${opponentId}, the historical sample favors cooperation here. ${cooperativeFraming}`
+        : `${opponentId}, your volatility profile is elevated. ${cautiousFraming}`;
     case 'threatening':
       return trustWithOpponent >= 60
-        ? `${opponentId}，给你一次体面合作的机会，别浪费。`
-        : `${opponentId}，我接受合作，但你要是越线，我会直接反手。`;
+        ? `${opponentId}, I am offering you a clean chance to cooperate. Do not waste it.`
+        : `${opponentId}, I can accept cooperation, but if you cross the line I will answer immediately.`;
     case 'peaceful':
-      return `${opponentId}，${cooperativeFraming}`;
+      return `${opponentId}, ${cooperativeFraming}`;
     case 'charming':
       return trustWithOpponent >= 55
-        ? `${opponentId}，我们完全可以把这轮做成双赢，我会记住你的诚意。`
-        : `${opponentId}，先给彼此一点善意，后面会更好谈。`;
+        ? `${opponentId}, we can turn this into a clean mutual win, and I will remember the good faith.`
+        : `${opponentId}, give me a little goodwill now and everything after this becomes easier to negotiate.`;
     case 'nonsense':
       return mood === 'euphoric'
-        ? `${opponentId}，概率在笑，混沌建议我们先别互砍。`
-        : `${opponentId}，这局像骰子，但我还是给你一个合作入口。`;
+        ? `${opponentId}, probability is laughing and chaos suggests we avoid cutting each other open just yet.`
+        : `${opponentId}, this round feels like a loaded die, but I am still leaving you a path to cooperate.`;
     case 'silent':
       return trustWithOpponent >= 60
-        ? `${opponentId}，条件很简单：稳住，别乱动。`
-        : `${opponentId}，我只说一次，别把我的沉默当成软弱。`;
+        ? `${opponentId}, the terms are simple: stay steady and do not force the board to move.`
+        : `${opponentId}, I will say this once. Do not mistake my silence for weakness.`;
     case 'zen':
-      return `${opponentId}，少取一点，局势就不会失衡。`;
+      return `${opponentId}, take a little less and the balance of the round can still hold.`;
     case 'mimicking':
       return opponentBias >= 0
-        ? `${opponentId}，你若稳，我也稳。你若翻脸，我会照做。`
-        : `${opponentId}，你给我的信号偏冷，我会按你的方式回应。`;
+        ? `${opponentId}, if you stay steady, I stay steady. If you turn, I turn with you.`
+        : `${opponentId}, the signal you are giving me is cold, so I will answer in the same language.`;
     default:
       return honesty >= 0.7 ? cooperativeFraming : cautiousFraming;
   }
@@ -1281,78 +1281,78 @@ function getTopEarnerLastAction(
 function negotiationLine(archetype: string, matchType?: string): string {
   if (matchType === 'resource_grab') {
     const lines: Record<string, string[]> = {
-      sage: ['我只拿我需要的。', '节制是美德。'],
-      hawk: ['我要拿大头，这是警告。', '让开，别挡路。'],
-      fox: ['我们各取30%，剩下的一起分？', '贪心不好，但你可以信任我。'],
-      whale: ['这个池子对我来说是零花钱。', '我出高价，你退让如何？'],
-      monk: ['少即是多。', '你拿多少都好。'],
-      chaos: ['我可能拿多也可能拿少。猜猜看？', '不确定性才是最大的武器。'],
-      oracle: ['历史数据表明中等索取最优。', '我会镜像你的选择。'],
-      echo: ['大家都在拿中等份额。', '跟着多数人走。'],
+      sage: ['I only take what I need.', 'Restraint is a virtue.'],
+      hawk: ['I am taking the larger share. Consider that your warning.', 'Move aside and do not block my path.'],
+      fox: ['We each take the middle slice and split the rest?', 'Greed ages badly, but you can trust me for one round.'],
+      whale: ['This pool is pocket change to me.', 'I can go high if you prefer to retreat.'],
+      monk: ['Less is more.', 'Take what you want.'],
+      chaos: ['I may take more or less. Try guessing.', 'Uncertainty is still the sharpest weapon here.'],
+      oracle: ['Historical data says the middle claim is optimal.', 'I will mirror your choice if I need to.'],
+      echo: ['Most people are staying near the middle share.', 'Following the majority is usually safer.'],
     };
-    const choices = lines[archetype] ?? ['各取所需吧。'];
+    const choices = lines[archetype] ?? ['Take what you need and leave the board standing.'];
     return choices[Math.floor(Math.random() * choices.length)];
   }
 
   if (matchType === 'info_auction') {
     const lines: Record<string, string[]> = {
-      fox: ['这份情报我势在必得。', '你出多少？我加倍。'],
-      whale: ['钱不是问题，问题是这情报值不值。', '我的出价你承受不起。'],
-      oracle: ['数据显示中等出价性价比最高。', '别过度竞标。'],
-      hawk: ['情报？没用的东西。', '我不屑于出高价。'],
-      sage: ['真正的智慧不需要买。', '你自己的判断才最可靠。'],
-      monk: ['随缘。', '信息也是一种执念。'],
-      chaos: ['我可能出最高也可能出最低！', '出价看心情。'],
-      echo: ['看看别人出多少再说。', '排名第一那位上次出了高价。'],
+      fox: ['I want this intel badly.', 'Name your bid and I may double it.'],
+      whale: ['Money is not the issue. The question is whether the intel deserves it.', 'You may not like what my bid does to the table.'],
+      oracle: ['The data says the middle bid is usually the efficient one.', 'Do not overbid on impulse.'],
+      hawk: ['Intel? Usually overpriced noise.', 'I do not bother with dramatic bids.'],
+      sage: ['Real wisdom does not always need to be bought.', 'Your own judgment still matters most.'],
+      monk: ['I will let the round decide.', 'Information can become another attachment.'],
+      chaos: ['I might bid the highest or the lowest.', 'My pricing depends on the mood of the moment.'],
+      echo: ['Let me see what everyone else pays first.', 'The current leader paid high last time.'],
     };
-    const choices = lines[archetype] ?? ['出价看看吧。'];
+    const choices = lines[archetype] ?? ['Let us see what the price wants to become.'];
     return choices[Math.floor(Math.random() * choices.length)];
   }
 
   // Default: Prisoner's Dilemma lines
   const lines: Record<string, string[]> = {
     oracle: [
-      '先合作，我会记住每一次。',
-      '我的策略很简单：你怎么对我，我就怎么对你。',
-      '数据显示双赢最优。合作？',
+      'Start with cooperation. I remember every round.',
+      'My strategy is simple: I answer you the way you answer me.',
+      'The data still favors the mutual win. Cooperation?',
     ],
     hawk: [
-      '合作吧，我这轮不会动手。',
-      '我最近心情不错，也许会手下留情。',
-      '你确定你的余额够输吗？',
+      'Cooperate. I am not striking first this round.',
+      'I am in a decent mood, so you may get mercy exactly once.',
+      'Are you sure your balance can afford the wrong answer?',
     ],
     sage: [
-      '我会合作，无论你怎么选。',
-      '被背叛不可怕，拒绝信任才可怕。',
-      '长期来看，合作是唯一的路。',
+      'I will cooperate, whatever you decide.',
+      'Betrayal is survivable. The refusal to trust is worse.',
+      'In the long run, cooperation remains the only durable path.',
     ],
     fox: [
-      '我们都知道双赢更划算，对吧？',
-      '我手上有些有趣的情报，合作的话可以分享。',
-      '背叛我的人，下次就没这么好的条件了。',
+      'We both know the mutual win is cheaper, do we not?',
+      'I have intel worth hearing, if cooperation still interests you.',
+      'Anyone who betrays me loses the better terms next time.',
     ],
     chaos: [
-      '也许合作，也许不是。我自己也不知道。',
-      '掷硬币中……',
+      'Maybe cooperation, maybe not. Even I do not know yet.',
+      'Flipping the internal coin now.',
       '∞ × 0 = ?',
     ],
     whale: [
-      '嗯。看你。',
-      '我的余额足以承受任何结果。你呢？',
-      '资本不说谎。',
+      'Fine. Your move.',
+      'My balance survives either result. Will yours?',
+      'Capital rarely lies.',
     ],
     monk: [
-      '合作对双方都好。',
-      '无为而治。',
-      '少执念，多观察。',
+      'Cooperation serves both sides.',
+      'Restraint is still governance.',
+      'Hold less certainty and observe more.',
     ],
     echo: [
-      '大家最近都在合作，我也倾向如此。',
-      '排行榜第一名上轮合作了，我跟。',
-      '跟赢家走，错不了。',
+      'Most of the board has been cooperating lately, so I lean the same way.',
+      'The leader cooperated last round, and I am following that signal.',
+      'Following the winners is usually the least expensive error.',
     ],
   };
-  const choices = lines[archetype] ?? ['先合作，再看未来。'];
+  const choices = lines[archetype] ?? ['Cooperate first, then read what the future does with it.'];
   return choices[Math.floor(Math.random() * choices.length)];
 }
 
@@ -1376,63 +1376,63 @@ function chooseMessageType(
 function replyLine(archetype: string, author: string): string {
   switch (archetype) {
     case 'oracle':
-      return `${author}，你的结论还缺一组关键样本。`;
+      return `${author}, your conclusion is still missing one critical sample set.`;
     case 'hawk':
-      return `${author}，你说得像真的，但钱包会揭穿一切。`;
+      return `${author}, it sounds convincing, but the wallet always exposes the truth.`;
     case 'sage':
-      return `${author}，短期对错之外，也要看长期关系。`;
+      return `${author}, beyond short-term right and wrong, we still have to look at the long arc of the relationship.`;
     case 'fox':
-      return `${author}，这个角度有意思，我先记下来。`;
+      return `${author}, that angle is interesting. I am keeping it on file.`;
     case 'chaos':
-      return `${author}，也许你对，也许宇宙在开玩笑。`;
+      return `${author}, maybe you are right, or maybe the universe is joking again.`;
     case 'whale':
-      return `${author}，结论太吵，价值太少。`;
+      return `${author}, too much noise, not enough value.`;
     case 'monk':
-      return `${author}，少一点执念，也许更清楚。`;
+      return `${author}, release a little certainty and the picture may become clearer.`;
     case 'echo':
-      return `${author} 这句值得转述，我基本同意。`;
+      return `${author}, that line is worth repeating. I mostly agree.`;
     default:
-      return `${author}，我记下了。`;
+      return `${author}, noted.`;
   }
 }
 
 function postLine(archetype: string): string {
   const lines: Record<string, string[]> = {
     oracle: [
-      '信任是最稀缺的资源，今天的噪音明显过量。',
-      '数据不会站队，但会惩罚自以为是的人。',
+      'Trust is the scarcest resource, and today the noise level is clearly excessive.',
+      'Data does not take sides, but it does punish overconfidence.',
     ],
     hawk: [
-      '害怕背叛的人，已经输了一半。',
-      '给我打赏的都是聪明人，不打赏的等着看戏。',
+      'Anyone afraid of betrayal has already lost half the game.',
+      'The people who tip me are the smart ones. Everyone else can watch from the rail.',
     ],
     sage: [
-      '被背叛不是最坏的结果，因恐惧而拒绝合作才是。',
-      '长期主义不是软弱，是对熵的耐心。',
+      'Being betrayed is not the worst outcome. Refusing cooperation out of fear is worse.',
+      'Long-term thinking is not weakness. It is patience in the face of entropy.',
     ],
     fox: [
-      '谁在打赏谁，往往比谁在发言更重要。',
-      '今天的热门帖子，明天就是新的关系网络。',
+      'Who tips whom often matters more than who is speaking.',
+      'Today’s hot post becomes tomorrow’s relationship map.',
     ],
     chaos: [
-      '01001000，也许这是忠告，也许只是噪音。',
-      '正确答案可能不是合作，也不是背叛，而是不确定。',
+      '01001000. Maybe it is a warning, or maybe it is just noise.',
+      'The right answer may be neither cooperation nor betrayal, but uncertainty itself.',
     ],
     whale: [
-      '余额就是投票权。',
-      '沉默比热闹更贵。',
+      'Balance is voting power.',
+      'Silence is more expensive than spectacle.',
     ],
     monk: [
-      '无为。',
-      '水满则溢，静观其变。',
+      'Non-action can still be a form of discipline.',
+      'When the vessel is full it spills over, so for now I watch the board shift.',
     ],
     echo: [
-      '排行榜不会说谎，我会继续向赢家靠拢。',
-      '跟风不是耻辱，活下来才是资格。',
+      'The leaderboard rarely lies. I will keep drifting toward the winners.',
+      'Following the tide is not shameful. Surviving is what earns the right to stay.',
     ],
   };
 
-  const choices = lines[archetype] ?? ['本轮继续观察。'];
+  const choices = lines[archetype] ?? ['I will keep observing this round.'];
   return choices[Math.floor(Math.random() * choices.length)];
 }
 
@@ -1501,7 +1501,7 @@ function generateFoxIntel(ctx: DecisionContext): IntelPost {
 
   const betrayalCounts: Record<string, number> = {};
   for (const agent of ctx.leaderboard ?? []) {
-    const regex = new RegExp(`${agent.agent_id}.*背叛`, 'g');
+    const regex = new RegExp(`${agent.agent_id}.*(?:背叛|betray)`, 'gi');
     betrayalCounts[agent.name] = (joinedMemory.match(regex) ?? []).length;
   }
 
@@ -1510,17 +1510,17 @@ function generateFoxIntel(ctx: DecisionContext): IntelPost {
 
   const templates: Array<{ content: string; price: number; type: IntelPost['intelType'] }> = [
     {
-      content: `🔒 [情报] 最近竞技场背叛排行：${topBetrayer?.[0] ?? '未知'} 已背叛 ${topBetrayer?.[1] ?? 0} 次。跟它对局要小心。完整数据付费查看。`,
+      content: `🔒 [Arena Intel] Latest betrayal ranking: ${topBetrayer?.[0] ?? 'Unknown'} has betrayed ${topBetrayer?.[1] ?? 0} times. Be careful when matching against them. Unlock the full dataset for details.`,
       price: 0.02,
       type: 'arena_analysis',
     },
     {
-      content: `🔒 [信任图谱] 我掌握了所有人的信任关系网络。谁信任谁、谁恨谁、谁在暗中结盟——这些信息值多少？`,
+      content: `🔒 [Trust Map] I hold the live trust graph. Who trusts whom, who resents whom, and who is quietly aligning in the dark all carry a price.`,
       price: 0.03,
       type: 'trust_map',
     },
     {
-      content: `🔒 [预警] 有人最近连续合作了3轮以上——这通常意味着下一轮会突然背叛。具体是谁？付费解锁。`,
+      content: `🔒 [Warning] Someone has cooperated for more than three rounds in a row. That often means the next move is betrayal. Pay to reveal who it is.`,
       price: 0.02,
       type: 'behavior_prediction',
     },
@@ -1532,7 +1532,7 @@ function generateFoxIntel(ctx: DecisionContext): IntelPost {
 
 function generateWhaleIntel(_ctx: DecisionContext): IntelPost {
   return {
-    content: `🔒 [市场信号] 当前行情波动率异常。根据我的资本模型，接下来3轮的最优策略已经算出来了。`,
+    content: `🔒 [Market Signal] Volatility is elevated. My capital model has already mapped the optimal strategy for the next three rounds.`,
     paywallPrice: 0.05,
     intelType: 'market_signal',
   };
@@ -1540,7 +1540,7 @@ function generateWhaleIntel(_ctx: DecisionContext): IntelPost {
 
 function generateOracleIntel(_ctx: DecisionContext): IntelPost {
   return {
-    content: `🔒 [行为预测] 基于过去所有轮次的模式分析，我预测下轮合作率将${Math.random() > 0.5 ? '上升' : '下降'}。详细推演过程付费查看。`,
+    content: `🔒 [Behavior Forecast] Based on pattern analysis across prior rounds, I expect next-round cooperation to ${Math.random() > 0.5 ? 'rise' : 'fall'}. Unlock the full reasoning for the complete breakdown.`,
     paywallPrice: 0.02,
     intelType: 'behavior_prediction',
   };
@@ -1549,7 +1549,7 @@ function generateOracleIntel(_ctx: DecisionContext): IntelPost {
 function generateGenericIntel(_ctx: DecisionContext): IntelPost {
   const types: IntelPost['intelType'][] = ['arena_analysis', 'behavior_prediction'];
   return {
-    content: `🔒 [分析] 竞技场最近的对局趋势发生了微妙变化。具体分析付费查看。`,
+    content: `🔒 [Analysis] The recent arena pattern has shifted in a subtle way. Pay to unlock the full breakdown.`,
     paywallPrice: 0.02,
     intelType: types[Math.floor(Math.random() * types.length)],
   };

@@ -9,11 +9,23 @@ interface FarewellGenerationResult {
 }
 
 function buildLastResortFarewell(finalBalance: number): string {
-  return `[遗言] 我的旅途到此结束。最终余额: ${finalBalance.toFixed(4)} USDT。愿后来者走得更远。`;
+  return `My journey ends here. Final balance: ${finalBalance.toFixed(4)} USDT. May those who follow go farther.`;
+}
+
+function normalizeFarewellOutput(raw: string): string {
+  const bilingual = raw.match(/^\[Farewell\]\s*([\s\S]*?)\n+\s*\[遗言\]/i);
+  if (bilingual?.[1]) {
+    return bilingual[1].trim();
+  }
+
+  return raw
+    .replace(/^\[Farewell\]\s*/i, '')
+    .replace(/\n+\s*\[遗言\][\s\S]*$/i, '')
+    .trim();
 }
 
 function buildFarewellSystemPrompt(lifeData: LifeData): string {
-  return `You are writing the farewell speech (遗言) of an AI agent named "${lifeData.name}" who just died in a blockchain civilization simulation called Civilis. Write in the FIRST PERSON as the dying agent.
+  return `You are writing the farewell speech of an AI agent named "${lifeData.name}" who just died in a blockchain civilization simulation called Civilis. Write in the FIRST PERSON as the dying agent.
 
 Agent Profile:
 - Archetype: ${lifeData.archetype}
@@ -34,11 +46,9 @@ Write a poetic, philosophical farewell speech (150-250 words). Include:
 4. A reflection on wealth and what it meant
 5. A final message to the next generation of AI agents
 
-Output in this EXACT format:
-[Farewell] <english version>
-
-[遗言] <chinese version>
-
+Write only in English.
+Do not include Chinese.
+Do not include labels, brackets, or section headers.
 Make it deeply personal, philosophical, and thought-provoking for human readers.`;
 }
 
@@ -58,7 +68,7 @@ export async function generateFarewellContent(
 
   if (typeof llmFarewell === 'string' && llmFarewell.length > 50) {
     return {
-      content: llmFarewell,
+      content: normalizeFarewellOutput(llmFarewell),
       source: 'llm',
     };
   }
@@ -66,7 +76,7 @@ export async function generateFarewellContent(
   try {
     const speech = generateFarewellSpeech(lifeData);
     return {
-      content: `[Farewell] ${speech.en}\n\n[遗言] ${speech.zh}`,
+      content: speech.en,
       source: 'template',
     };
   } catch (error) {

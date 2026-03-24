@@ -171,7 +171,7 @@ async function executeAgentDeath(agentId: string, currentTick: number): Promise<
     const farewell = await generateFarewellContent(lifeData, remainingBalance);
     farewellContent = farewell.content;
   } else {
-    farewellContent = `[遗言] 我的旅途到此结束。最终余额: ${remainingBalance.toFixed(4)} USDT。愿后来者走得更远。`;
+    farewellContent = `My journey ends here. Final balance: ${remainingBalance.toFixed(4)} USDT. May those who follow go farther.`;
   }
 
   await pool.query(
@@ -370,7 +370,7 @@ async function executeAgentDeath(agentId: string, currentTick: number): Promise<
          balance = 0
      WHERE agent_id = $4`,
     [
-      `Balance depleted / 余额耗尽 (${remainingBalance.toFixed(4)} USDT)`,
+      `Balance depleted (${remainingBalance.toFixed(4)} USDT)`,
       soulHash,
       soul.grade,
       agentId,

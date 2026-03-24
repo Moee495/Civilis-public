@@ -5,6 +5,7 @@ import { api, Agent, DeathAnalysis } from '@/lib/api'
 import { useRealtimeFeed } from '@/lib/socket'
 import { EmptyState, Panel, archetypeMeta, formatArchetypeMetaLabel, formatShortDate, formatUsd } from '@/components/CivilisPrimitives'
 import { useI18n } from '@/lib/i18n/index'
+import { formatDynamicNarrative } from '@/lib/dynamic-text'
 
 const SOUL_GRADE_STYLE: Record<string, { color: string; bg: string; label: string; labelZh: string }> = {
   legendary: { color: '#F59E0B', bg: 'bg-amber-500/10', label: 'LEGENDARY', labelZh: '传奇' },
@@ -200,7 +201,9 @@ export default function GraveyardPage() {
                       <span className="text-sm text-[var(--text-dim)]">{isExpanded ? '▲' : '▼'}</span>
                     </div>
                   </div>
-                  <p className="mt-3 text-sm italic text-[var(--text-dim)]">{agent.death_reason || t('graveyard.balanceExhaustion')}</p>
+                  <p className="mt-3 text-sm italic text-[var(--text-dim)]">
+                    {formatDynamicNarrative(agent.death_reason || t('graveyard.balanceExhaustion'), zh)}
+                  </p>
                 </button>
 
                 {/* Expanded Death Analysis */}
@@ -214,7 +217,9 @@ export default function GraveyardPage() {
                         {analysis.farewell && (
                           <div className="rounded-lg border border-[#E74C3C]/20 bg-[#E74C3C]/5 px-5 py-4">
                             <p className="mb-2 font-mono text-xs uppercase tracking-wider text-[#E74C3C]/70">{zh ? '遗言' : 'FAREWELL SPEECH'}</p>
-                            <p className="whitespace-pre-line text-sm leading-7 text-[var(--text-secondary)]">{analysis.farewell}</p>
+                            <p className="whitespace-pre-line text-sm leading-7 text-[var(--text-secondary)]">
+                              {formatDynamicNarrative(analysis.farewell, zh)}
+                            </p>
                           </div>
                         )}
 

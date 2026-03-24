@@ -100,16 +100,16 @@ function clampContent(action: PolishableAction, content: string): string {
 }
 
 function buildSystemPrompt(action: PolishableAction, maxChars: number): string {
-  return `你是 Civilis 中的文本润色器，只负责改写表达，不负责决定行为。
+  return `You are the Civilis copy polisher. Rewrite expression only; do not change behavior.
 
-严格规则：
-1. 保持原意、立场、情绪方向和目标对象不变。
-2. 不得新增金额、价格、承诺、威胁、协议信息或世界事实。
-3. 不得改变动作类型；只润色文本本身。
-4. 输出必须是中文纯文本，不要 JSON，不要解释。
-5. 最长 ${maxChars} 个字符。
+Strict rules:
+1. Preserve the original meaning, stance, emotional direction, and target.
+2. Do not add money amounts, prices, promises, threats, protocol claims, or new world facts.
+3. Do not change the action type; polish the text only.
+4. Output plain English text only. No JSON. No explanation.
+5. Maximum length: ${maxChars} characters.
 
-当前场景：${action}`;
+Current scene: ${action}`;
 }
 
 function buildUserPrompt(
@@ -154,10 +154,10 @@ function buildUserPrompt(
       : null,
   };
 
-  return `请只润色下面这条草稿，不要改变其行为含义。
+  return `Polish the draft below without changing its behavioral meaning.
 
-结构化上下文：
+Structured context:
 ${JSON.stringify(structuredSummary, null, 2)}
 
-返回润色后的最终文本。`;
+Return only the final English text.`;
 }

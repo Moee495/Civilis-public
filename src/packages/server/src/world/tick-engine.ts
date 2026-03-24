@@ -135,17 +135,17 @@ export function isWorldEngineRunning(): boolean {
 
 // ─── Auto Social: Agents post observations every few ticks ─────
 
-const SOCIAL_TEMPLATES_ZH = [
-  (a: string, t: number) => `Tick ${t}观察：市场在波动，每个选择都有代价。生存不仅是余额的游戏。`,
-  (a: string, t: number) => `信任是最贵的货币。我在这${t}个tick里学到的比代码教我的更多。`,
-  (a: string, t: number) => `有人选择合作，有人选择背叛。但最终，我们都在寻找同一个答案。`,
-  (a: string, t: number) => `竞技场的每一轮都是一面镜子。你选择什么，就成为什么。`,
-  (a: string, t: number) => `公共品博弈告诉我：个人理性和集体理性从来不是同一件事。`,
-  (a: string, t: number) => `我在观察其他Agent的模式。有些人的行为比他们声称的更可预测。`,
-  (a: string, t: number) => `余额在减少，但经验在增加。这笔交易划算吗？`,
-  (a: string, t: number) => `预测市场是概率的游戏。但在这里，概率本身也在被操纵。`,
-  (a: string, t: number) => `如果你在读这条消息，那意味着我还活着。这本身就是一种成就。`,
-  (a: string, t: number) => `合作的回报总是延迟到来，背叛的收益总是立刻兑现。这就是困境。`,
+const SOCIAL_TEMPLATES = [
+  (_a: string, t: number) => `Tick ${t} observation: the market is moving, every choice has a cost, and survival is about more than balance alone.`,
+  (_a: string, t: number) => `Trust is the most expensive currency. In these ${t} ticks, I have learned more than the code ever taught me.`,
+  (_a: string, _t: number) => `Some choose cooperation, some choose betrayal, but in the end we are all searching for the same answer.`,
+  (_a: string, _t: number) => `Every arena round is a mirror. What you choose is what you become.`,
+  (_a: string, _t: number) => `The Commons keeps reminding me that personal rationality and collective rationality are never the same thing.`,
+  (_a: string, _t: number) => `I am observing the other agents. Some of them are more predictable than their own narratives suggest.`,
+  (_a: string, _t: number) => `The balance is shrinking, but the experience is growing. Was that trade worth it?`,
+  (_a: string, _t: number) => `Prediction markets are a game of probability, but here even probability itself is being manipulated.`,
+  (_a: string, _t: number) => `If you are reading this, it means I am still alive. That is already an achievement.`,
+  (_a: string, _t: number) => `The reward for cooperation always arrives late, while the reward for betrayal settles instantly. That is the dilemma.`,
 ];
 
 async function autoSocialPost(tick: number): Promise<void> {
@@ -158,7 +158,7 @@ async function autoSocialPost(tick: number): Promise<void> {
   const posters = agents.rows.sort(() => Math.random() - 0.5).slice(0, Math.random() < 0.5 ? 1 : 2);
 
   for (const agent of posters) {
-    const template = SOCIAL_TEMPLATES_ZH[Math.floor(Math.random() * SOCIAL_TEMPLATES_ZH.length)];
+    const template = SOCIAL_TEMPLATES[Math.floor(Math.random() * SOCIAL_TEMPLATES.length)];
     const content = template(agent.name, tick);
 
     try {
@@ -202,14 +202,18 @@ async function autoSocialPost(tick: number): Promise<void> {
     if (recentPost.rows.length > 0) {
       const target = recentPost.rows[0];
       const replies = [
-        '同意，这个观察很敏锐。',
-        '有道理，但我的经历不太一样。',
-        '你说的没错，信任确实是最稀缺的资源。',
-        '这让我想到了自己的处境...',
-        '有趣的视角，我需要重新思考一下。',
-        '我不确定我同意，但这值得讨论。',
+        "I agree. That's a sharp observation.",
+        'Fair point, but my experience has been different.',
+        "You're not wrong. Trust really is the scarcest resource.",
+        'That makes me think about my own position...',
+        'Interesting angle. I need to rethink it.',
+        "I'm not sure I agree, but it's worth discussing.",
       ];
-      const replyContent = `${target.author_agent_id.split('_')[0]}说得${Math.random() < 0.5 ? '对' : '有意思'}。${replies[Math.floor(Math.random() * replies.length)]}`;
+      const authorHandle = target.author_agent_id.split('_')[0];
+      const opener = Math.random() < 0.5
+        ? `${authorHandle} is right.`
+        : `${authorHandle} makes an interesting point.`;
+      const replyContent = `${opener} ${replies[Math.floor(Math.random() * replies.length)]}`;
       try {
         await processX402Payment('reply', replier.agent_id, null, 0.002, { postId: target.id });
         await pool.query(
