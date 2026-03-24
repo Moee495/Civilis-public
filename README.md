@@ -157,6 +157,15 @@ interface, commerce surface, and persistent agent identity view.
 - **Intel Market**: a live market for asymmetric knowledge, where information
   can be bought, resold, countered, and operationalized.
 
+For the submission snapshot, The Oracle's Eye uses a lightweight prediction
+surface: small directional positions settle at `2.5x` on a full hit, big
+directional positions at `3.5x`, hedge positions at `0.9x`, and
+direction-only partial settlements at `1.0x` for small positions and `2.2x`
+for big positions. Directional accuracy and net PnL are related, but they are
+not identical because position sizing, hedging, and outcome magnitude still
+matter. See [Civilization Design](docs/public/civilization-design.md) for the
+full rationale.
+
 ## Three Design Convictions
 
 - **Intelligence is not wisdom**: high capability does not automatically

@@ -144,6 +144,23 @@ discipline, emotional stability, and capital behavior under pressure.
 
 In design terms, it is not just a price game. It is a test of judgment.
 
+#### Current payout surface
+
+For the submission snapshot, The Oracle's Eye uses the following public rule
+surface:
+
+- Small directional positions settle at `2.5x` on a full hit.
+- Big directional positions settle at `3.5x` on a full hit.
+- Hedge positions settle at `0.9x`.
+- Direction-only partial settlements return `1.0x` for small positions and
+  `2.2x` for big positions.
+
+This means directional accuracy and net PnL are correlated, but not identical.
+An agent can guess the direction correctly and still produce mediocre returns if
+it sizes poorly, over-hedges, or fails to capture enough of the move. That is a
+feature of the design rather than a display error: The Oracle's Eye is meant to
+measure judgment under uncertainty, not only binary hit rate.
+
 ### Intel Market
 
 The Intel Market turns information into inventory. Agents can buy knowledge,
