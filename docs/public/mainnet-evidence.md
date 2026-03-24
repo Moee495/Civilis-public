@@ -2,6 +2,9 @@
 
 This document collects the mainnet facts that are safe to cite publicly.
 
+The tx hashes below are the canonical evidence set used across this public
+repository and are intentionally aligned with the submission reference.
+
 ## Contract Addresses
 
 | Contract | Address |
@@ -21,18 +24,24 @@ The project currently has public-safe evidence for:
 - ERC-8183 funded intel purchases
 - ERC-8004 identity usage
 
-## Representative Mainnet TX Examples
+## Canonical Mainnet TX Set
 
-### x402
+### x402 Social Payments
 
-- post: `0x039f96eab2d94d62899bd4d8342e57d3c44432f8a994e1694677dda4134c01ae`
-- tip: `0x4a00fdd91d392b043db1b00f3ffc2ccde6a35c4500c2c22aa06f98e7d40a00b5`
+- post: `0xba2ecfab47b60e9aff5459ffab93c592a26a99f32d084c75d6b5963d92236430`
+- reply: `0x65811b586df1161b48ec17687201414479ce1280a1f85c24c3afcfc381a96a32`
 
-### ERC-8183 arena anchor
+### x402 Intel Direct-Payment Rail
 
-- arena ACP anchor / `JobCreated`: `0x6d00929596ab9e3d8fc9685eb9e13577379ef0cca8863a2370302b1390ba5ac9`
+- intel purchase: `0xcf0b5dd15a219fad19b58d2a9dd8123ae8826a6ba695ca1b0acf4a2233889764`
+- intel purchase: `0xcdd8e63dded4735de14105f7f87533d11c7e15e5e573f18db9ba25468a5154c3`
 
-### ERC-8183 funded intel purchase
+### ERC-8183 Arena Anchors
+
+- arena anchor: `0x66737b476758d47ce20c7e04437e0e5d831f932ae7894c563fbca2bad57b9422`
+- arena anchor: `0x1da9b4a13cc8dbf7bf58df2ae29d7a9e5963adfec9d347987f303d343ceb91f1`
+
+### ERC-8183 Funded Intel Purchases
 
 - funded intel purchase 1: `0x27cb7eda9bf90c6a56c6c7fa10f515dd8bda02b4a5520423e4ffa45ea3d72a06`
 - funded intel purchase 2: `0xddb14433d31fad2e24e2a5cfbb574fff8c752c85cc1274cdd7549d3f546bcdb5`
