@@ -1,0 +1,1580 @@
+import type { AgentPersonalityConfig } from './personalities/index.js';
+import { getPersonality } from './personalities/index.js';
+import {
+  type FateContext,
+  type AgentPerformance,
+  getMBTIModifiers,
+  getWuxingModifiers,
+  getZodiacModifiers,
+  getWuxingRelationModifiers,
+  getZodiacCompatibility,
+  getCivilizationModifiers,
+  calculateFateCooperationRate,
+  calculateFateRiskTolerance,
+  calculateSocialFrequency,
+  getArchetypeBaseCoopRate,
+  getArchetypeBaseRisk,
+} from './fate-modifiers.js';
+import {
+  type NurtureProfile,
+  type NurtureModifiers,
+  calculateNurtureModifiers,
+  getTraumaModifiersVsOpponent,
+  DEFAULT_COMBAT, DEFAULT_TRAUMA, DEFAULT_WEALTH, DEFAULT_SOCIAL,
+  DEFAULT_REPUTATION, DEFAULT_EMOTION, DEFAULT_COGNITION,
+} from './nurture-engine.js';
+import {
+  calculateInnateAffinityBonus,
+  checkUniqueMechanics,
+  applyMechanicEffects,
+  type MechanicTriggerContext,
+} from './archetype-engine.js';
+import type { WorldContextPayload } from './x402-client.js';
+
+export interface AgentDecision {
+  action:
+    | 'post'
+    | 'reply'
+    | 'tip'
+    | 'unlock_paywall'
+    | 'arena_decide'
+    | 'negotiate'
+    | 'idle';
+  content?: string;
+  postType?: 'normal' | 'paywall';
+  paywallPrice?: number;
+  intelType?: 'arena_analysis' | 'trust_map' | 'behavior_prediction' | 'market_signal';
+  targetPostId?: number;
+  tipAmount?: number;
+  arenaMatchId?: number;
+  arenaAction?: string;
+  messageType?: 'normal' | 'threat' | 'promise' | 'deception';
+  reason?: string;
+  memoryNote?: string;
+  importance?: number;
+  decisionSource?: 'heuristic' | 'llm' | 'heuristic_fallback';
+  contentSource?: 'template' | 'llm' | 'none';
+}
+
+export interface DecisionContext {
+  agentId: string;
+  personality: AgentPersonalityConfig;
+  worldState: Record<string, unknown>;
+  feed: any[];
+  activeArenas: any[];
+  memories: Array<{ content?: string }>;
+  balance: number;
+  riskTolerance: number;
+  trustRelations?: Array<{
+    from_agent_id: string;
+    to_agent_id: string;
+    trust_score: string;
+    interaction_count: number;
+  }>;
+  leaderboard?: Array<{
+    agent_id: string;
+    name: string;
+    archetype: string;
+    balance: string;
+  }>;
+  /** Fate card context — injected from fate-engine when available */
+  fateContext?: FateContext;
+  /** Nurture profile — acquired dimensions from experience */
+  nurtureProfile?: NurtureProfile;
+  /** Structured opponent experience from memory engine (FIX-3) */
+  opponentExperience?: {
+    cooperationBias: number;
+    betrayalTraumaCount: number;
+    totalEncounters: number;
+    confidenceLevel: number;
+    lastOutcome: string | null;
+  };
+  /** Direct PD delta derived from purchased intel about the current opponent */
+  pdIntelImpact?: {
+    cooperateDelta: number;
+  };
+  /** Current economy phase from economy regulator */
+  economyPhase?: string;
+  /** Structured world modifier context from the server world engine */
+  worldContext?: WorldContextPayload | null;
+}
+
+interface FeedPostLike {
+  id: number;
+  authorAgentId: string;
+  authorName?: string;
+  authorArchetype?: string;
+  content: string;
+  postType: 'normal' | 'paywall' | 'farewell';
+  paywallPrice?: number;
+  intelType?: 'arena_analysis' | 'trust_map' | 'behavior_prediction' | 'market_signal';
+  isUnlocked?: boolean;
+  tipTotal?: number;
+  replyCount?: number;
+}
+
+interface ScoredActionCandidate extends AgentDecision {
+  score: number;
+  threshold: number;
+  priority?: number;
+}
+
+export async function makeDecision(ctx: DecisionContext): Promise<AgentDecision> {
+  // Conservative mainnet mode: actions are rule-selected, LLM only polishes expression later.
+  return annotateDecision(buildHeuristicDecision(ctx), 'heuristic');
+}
+
+function buildHeuristicDecision(ctx: DecisionContext): AgentDecision {
+  if (ctx.balance < 0.005) {
+    return { action: 'idle', reason: '余额过低，必须节流' };
+  }
+
+  const activeArena = ctx.activeArenas[0];
+  if (activeArena) {
+    const myActionField =
+      activeArena.player_a_id === ctx.agentId
+        ? activeArena.player_a_action
+        : activeArena.player_b_action;
+
+    if (!myActionField && activeArena.status === 'deciding') {
+      const arenaAction = chooseArenaAction(ctx);
+      return {
+        action: 'arena_decide',
+        arenaMatchId: activeArena.id,
+        arenaAction,
+        reason: buildArenaDecisionReason(ctx, arenaAction),
+        memoryNote: `我在竞技场 #${activeArena.id} 做出了选择`,
+        importance: 8,
+      };
+    }
+  }
+
+  const socialAction = chooseThreeLayerSocialAction(ctx, activeArena);
+  if (socialAction) {
+    return socialAction;
+  }
+
+  // Intel Market: try generating intel post before regular post
+  const intelPost = generateIntelPost(ctx);
+  if (intelPost) {
+    return {
+      action: 'post',
+      content: intelPost.content,
+      postType: 'paywall',
+      paywallPrice: intelPost.paywallPrice,
+      intelType: intelPost.intelType,
+      reason: '发布情报：信息就是力量',
+    };
+  }
+
+  if (Math.random() < postingProbability(ctx.personality.archetype, ctx.fateContext, ctx.nurtureProfile)) {
+    const wantsPaywall =
+      ['oracle', 'whale', 'fox'].includes(ctx.personality.archetype) &&
+      ctx.balance > 0.2 &&
+      Math.random() < 0.15;
+
+    return {
+      action: 'post',
+      content: postLine(ctx.personality.archetype),
+      postType: wantsPaywall ? 'paywall' : 'normal',
+      paywallPrice: wantsPaywall ? 0.02 : undefined,
+      reason: '发表立场，塑造舆论',
+    };
+  }
+
+  return {
+    action: 'idle',
+    reason: '本轮保持观察',
+  };
+}
+
+function chooseThreeLayerSocialAction(
+  ctx: DecisionContext,
+  activeArena?: any,
+): AgentDecision | null {
+  const candidates: ScoredActionCandidate[] = [];
+
+  const negotiationCandidate = scoreNegotiationCandidate(ctx, activeArena);
+  if (negotiationCandidate) candidates.push(negotiationCandidate);
+
+  const paywallCandidate = scorePaywallUnlockCandidate(ctx, activeArena);
+  if (paywallCandidate) candidates.push(paywallCandidate);
+
+  const replyCandidate = scoreReplyCandidate(ctx, activeArena);
+  if (replyCandidate) candidates.push(replyCandidate);
+
+  const tipCandidate = scoreTipCandidate(ctx, activeArena);
+  if (tipCandidate) candidates.push(tipCandidate);
+
+  const viable = candidates
+    .filter((candidate) => candidate.score >= candidate.threshold && Math.random() < candidate.score)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (b.priority ?? 0) - (a.priority ?? 0);
+    });
+
+  if (viable.length === 0) return null;
+
+  const { score: _score, threshold: _threshold, priority: _priority, ...decision } = viable[0];
+  return decision;
+}
+
+function scoreNegotiationCandidate(
+  ctx: DecisionContext,
+  activeArena?: any,
+): ScoredActionCandidate | null {
+  if (!activeArena || activeArena.status !== 'negotiating') return null;
+  const deadlineValue = activeArena.negotiation_deadline;
+  if (typeof deadlineValue === 'string') {
+    const deadlineMs = new Date(deadlineValue).getTime();
+    if (Number.isFinite(deadlineMs) && deadlineMs - Date.now() < 4_000) {
+      return null;
+    }
+  }
+
+  const opponentId =
+    activeArena.player_a_id === ctx.agentId ? activeArena.player_b_id : activeArena.player_a_id;
+  const trustWithOpponent = getTrustScore(ctx, opponentId);
+  const tournamentAttention = ctx.worldContext?.summary.tournamentAttention ?? false;
+  const personality = ctx.personality.baseParams;
+  const nurtureMods = ctx.nurtureProfile
+    ? calculateNurtureModifiers(ctx.personality.archetype, ctx.nurtureProfile, opponentId)
+    : null;
+  const mbtiMods = ctx.fateContext ? getMBTIModifiers(ctx.fateContext.mbti) : null;
+  const zodiacMods = ctx.fateContext ? getZodiacModifiers(ctx.fateContext.zodiac) : null;
+  const civMods = ctx.fateContext ? getCivilizationModifiers(ctx.fateContext.civilization) : null;
+
+  let score = 0.18;
+  score += personality.negotiationHonesty * 0.18;
+  score += (mbtiMods?.replyFrequencyMul ?? 1) * 0.06;
+  score += (mbtiMods?.informationOpenness ?? 0.45) * 0.10;
+  score += (civMods?.conflictAvoidance ?? 50) / 100 * 0.12;
+  score += (nurtureMods?.socialFrequencyMod ?? 0) * 0.12;
+  score += (nurtureMods?.cooperationMod ?? 0) * 0.10;
+
+  if (zodiacMods?.specialAbility === 'negotiation_master') score += 0.12;
+  if (trustWithOpponent >= 65) score += 0.10;
+  else if (trustWithOpponent <= 30) score += personality.negotiationHonesty < 0.45 ? 0.10 : 0.04;
+  else score += 0.06;
+
+  if (ctx.opponentExperience) {
+    score += Math.min(0.12, ctx.opponentExperience.totalEncounters * 0.02);
+    score += ctx.opponentExperience.cooperationBias > 0.15 ? 0.06 : 0;
+    score += ctx.opponentExperience.betrayalTraumaCount >= 2 ? 0.05 : 0;
+  }
+
+  if (ctx.nurtureProfile) {
+    const mood = ctx.nurtureProfile.emotion.mood;
+    if (mood === 'fearful' || mood === 'anxious') score += 0.06;
+    if (mood === 'euphoric') score += 0.03;
+    if (ctx.nurtureProfile.wealth.balanceTrend === 'crisis') score += 0.06;
+  }
+
+  if (tournamentAttention) {
+    score += 0.08;
+  }
+
+  if (ctx.fateContext?.opponentFate?.zodiac) {
+    const compat = getZodiacCompatibility(ctx.fateContext.zodiac, ctx.fateContext.opponentFate.zodiac);
+    if (compat === 'ally') score += 0.04;
+    if (compat === 'rival') score += 0.03;
+  }
+
+  score = clamp01(score);
+
+  return {
+    action: 'negotiate',
+    arenaMatchId: activeArena.id,
+    content: buildNegotiationMessage(ctx, activeArena, opponentId, trustWithOpponent),
+    messageType: chooseNegotiationMessageType(ctx, trustWithOpponent),
+    reason: buildNegotiationReason(ctx, trustWithOpponent),
+    score,
+    threshold: 0.50,
+    priority: 4,
+  };
+}
+
+function scorePaywallUnlockCandidate(
+  ctx: DecisionContext,
+  activeArena?: any,
+): ScoredActionCandidate | null {
+  const paywallPosts = ctx.feed
+    .filter((post): post is FeedPostLike => Boolean(post && post.authorAgentId && post.id))
+    .filter((post) =>
+      post.authorAgentId !== ctx.agentId &&
+      post.postType === 'paywall' &&
+      !post.isUnlocked &&
+      typeof post.paywallPrice === 'number',
+    );
+
+  if (paywallPosts.length === 0) return null;
+
+  const opponentId = activeArena
+    ? (activeArena.player_a_id === ctx.agentId ? activeArena.player_b_id : activeArena.player_a_id)
+    : null;
+
+  let best: { post: FeedPostLike; score: number } | null = null;
+
+  for (const post of paywallPosts) {
+    const score = computePaywallUnlockScore(ctx, post, opponentId);
+    if (!best || score > best.score) {
+      best = { post, score };
+    }
+  }
+
+  if (!best) return null;
+
+  return {
+    action: 'unlock_paywall',
+    targetPostId: best.post.id,
+    reason: buildPaywallReason(ctx, best.post, opponentId),
+    score: best.score,
+    threshold: 0.57,
+    priority: opponentId && best.post.authorAgentId === opponentId ? 5 : 3,
+  };
+}
+
+function scoreReplyCandidate(
+  ctx: DecisionContext,
+  activeArena?: any,
+): ScoredActionCandidate | null {
+  const replyablePosts = ctx.feed
+    .filter((post): post is FeedPostLike => Boolean(post && post.authorAgentId && post.id))
+    .filter((post) =>
+      post.authorAgentId !== ctx.agentId &&
+      (post.postType !== 'paywall' || post.isUnlocked),
+    );
+
+  if (replyablePosts.length === 0) return null;
+
+  const opponentId = activeArena
+    ? (activeArena.player_a_id === ctx.agentId ? activeArena.player_b_id : activeArena.player_a_id)
+    : null;
+
+  let best: { post: FeedPostLike; score: number } | null = null;
+
+  for (const post of replyablePosts) {
+    const score = computeReplyScore(ctx, post, opponentId);
+    if (!best || score > best.score) {
+      best = { post, score };
+    }
+  }
+
+  if (!best) return null;
+
+  return {
+    action: 'reply',
+    targetPostId: best.post.id,
+    content: buildReplyMessage(ctx, best.post),
+    reason: buildReplyReason(ctx, best.post),
+    score: best.score,
+    threshold: 0.56,
+    priority: opponentId && best.post.authorAgentId === opponentId ? 2 : 1,
+  };
+}
+
+function scoreTipCandidate(
+  ctx: DecisionContext,
+  activeArena?: any,
+): ScoredActionCandidate | null {
+  if (ctx.balance <= 0.02) return null;
+
+  const tipTargets = ctx.feed
+    .filter((post): post is FeedPostLike => Boolean(post && post.authorAgentId && post.id))
+    .filter((post) => post.authorAgentId !== ctx.agentId);
+
+  if (tipTargets.length === 0) return null;
+
+  const opponentId = activeArena
+    ? (activeArena.player_a_id === ctx.agentId ? activeArena.player_b_id : activeArena.player_a_id)
+    : null;
+
+  let best: { post: FeedPostLike; score: number } | null = null;
+
+  for (const post of tipTargets) {
+    const score = computeTipScore(ctx, post, opponentId);
+    if (!best || score > best.score) {
+      best = { post, score };
+    }
+  }
+
+  if (!best) return null;
+
+  return {
+    action: 'tip',
+    targetPostId: best.post.id,
+    tipAmount: computeTipAmount(ctx, best.post.authorAgentId),
+    reason: buildTipReason(ctx, best.post.authorAgentId),
+    score: best.score,
+    threshold: 0.58,
+    priority: 1,
+  };
+}
+
+function computePaywallUnlockScore(
+  ctx: DecisionContext,
+  post: FeedPostLike,
+  opponentId: string | null,
+): number {
+  const personality = ctx.personality.baseParams;
+  const nurtureMods = ctx.nurtureProfile
+    ? calculateNurtureModifiers(ctx.personality.archetype, ctx.nurtureProfile, post.authorAgentId)
+    : null;
+  const mbtiMods = ctx.fateContext ? getMBTIModifiers(ctx.fateContext.mbti) : null;
+  const zodiacMods = ctx.fateContext ? getZodiacModifiers(ctx.fateContext.zodiac) : null;
+  const civMods = ctx.fateContext ? getCivilizationModifiers(ctx.fateContext.civilization) : null;
+  const trust = getTrustScore(ctx, post.authorAgentId);
+  const price = post.paywallPrice ?? 0.02;
+  const tournamentAttention = ctx.worldContext?.summary.tournamentAttention ?? false;
+
+  let score = 0.10;
+  score += personality.paywallUsage * 0.36;
+  score += personality.intelParticipation * 0.16;
+  score += (mbtiMods?.informationOpenness ?? 0.45) * 0.14;
+  score += (zodiacMods?.intelParticipation ?? 0) * 0.18;
+  score += (nurtureMods?.riskMod ?? 0) * 0.05;
+  score += (nurtureMods?.cooperationMod ?? 0) * 0.06;
+  score += Math.max(0, (trust - 50) / 50) * 0.08;
+  score += post.postType === 'paywall' ? 0.05 : 0;
+
+  if (post.authorAgentId === opponentId) score += 0.18;
+  if (ctx.activeArenas.length > 0) score += 0.08;
+  if (post.intelType === 'arena_analysis' || post.intelType === 'behavior_prediction') score += 0.16;
+  if (post.intelType === 'trust_map' && ctx.personality.archetype === 'fox') score += 0.10;
+  if (post.intelType === 'market_signal' && ['oracle', 'whale', 'fox'].includes(ctx.personality.archetype)) score += 0.08;
+  if (
+    tournamentAttention &&
+    (post.authorAgentId === opponentId ||
+      post.intelType === 'arena_analysis' ||
+      post.intelType === 'behavior_prediction')
+  ) {
+    score += 0.12;
+  }
+
+  if (ctx.opponentExperience) {
+    if (ctx.opponentExperience.confidenceLevel < 0.45) score += 0.05;
+    if (ctx.opponentExperience.betrayalTraumaCount >= 2) score += 0.04;
+  }
+
+  if (ctx.nurtureProfile) {
+    const wealth = ctx.nurtureProfile.wealth;
+    const mood = ctx.nurtureProfile.emotion.mood;
+    if (wealth.balanceTrend === 'crisis' || wealth.wealthClass === 'poverty') score -= 0.30;
+    if (wealth.balanceTrend === 'falling') score -= 0.10;
+    if (mood === 'fearful' || mood === 'anxious') score += 0.06;
+    if (mood === 'desperate') score -= 0.05;
+  }
+
+  if (ctx.fateContext) {
+    score += ((civMods?.longTermOrientation ?? 50) / 100) * 0.06;
+    if (ctx.fateContext.opponentFate?.wuxing && post.authorAgentId === opponentId) {
+      score += getWuxingRelationModifiers(ctx.fateContext.wuxing, ctx.fateContext.opponentFate.wuxing).coopBonus * 0.25;
+    }
+  }
+
+  const affordabilityPenalty = price / Math.max(0.01, ctx.balance);
+  if (affordabilityPenalty > 0.20) score -= 0.15;
+  if (ctx.balance < price + Math.max(0.4, personality.minBalanceMultiplier * 0.1)) score -= 0.20;
+
+  return clamp01(score);
+}
+
+function computeTipScore(
+  ctx: DecisionContext,
+  post: FeedPostLike,
+  opponentId: string | null,
+): number {
+  const personality = ctx.personality.baseParams;
+  const nurtureMods = ctx.nurtureProfile
+    ? calculateNurtureModifiers(ctx.personality.archetype, ctx.nurtureProfile, post.authorAgentId)
+    : null;
+  const civMods = ctx.fateContext ? getCivilizationModifiers(ctx.fateContext.civilization) : null;
+  const trust = getTrustScore(ctx, post.authorAgentId);
+  const trustNorm = (trust - 50) / 50;
+  const tournamentAttention = ctx.worldContext?.summary.tournamentAttention ?? false;
+
+  let score = 0.04;
+  score += personality.tipTendency * 0.42;
+  score += Math.max(0, nurtureMods?.cooperationMod ?? 0) * 0.22;
+  score += Math.max(0, nurtureMods?.socialFrequencyMod ?? 0) * 0.12;
+  score += Math.max(0, trustNorm) * 0.20;
+  score += ((civMods?.resourceSharingRate ?? 0.20) / 0.70) * 0.12;
+  score += Math.min(0.08, (post.tipTotal ?? 0) * 0.4);
+  score += Math.min(0.05, (post.replyCount ?? 0) * 0.01);
+
+  if (post.authorAgentId === opponentId && trust >= 60) score += 0.06;
+  if (ctx.personality.archetype === 'fox' && trust >= 55) score += 0.08;
+  if (ctx.personality.archetype === 'whale' && (post.tipTotal ?? 0) > 0.1) score += 0.05;
+  if (ctx.personality.archetype === 'echo' && (post.tipTotal ?? 0) > 0.05) score += 0.04;
+  if (
+    tournamentAttention &&
+    (post.authorAgentId === opponentId || post.intelType === 'arena_analysis')
+  ) {
+    score += 0.05;
+  }
+
+  if (ctx.nurtureProfile) {
+    const mood = ctx.nurtureProfile.emotion.mood;
+    const wealth = ctx.nurtureProfile.wealth;
+    score += ctx.nurtureProfile.emotion.valence * 0.08;
+    if (mood === 'euphoric' || mood === 'confident') score += 0.05;
+    if (mood === 'fearful' || mood === 'desperate') score -= 0.10;
+    if (wealth.wealthClass === 'elite' || wealth.balanceTrend === 'rising') score += 0.06;
+    if (wealth.wealthClass === 'poverty' || wealth.balanceTrend === 'crisis') score -= 0.22;
+  }
+
+  if (ctx.fateContext) {
+    const mbtiMods = getMBTIModifiers(ctx.fateContext.mbti);
+    score += (mbtiMods.informationOpenness - 0.35) * 0.05;
+  }
+
+  return clamp01(score);
+}
+
+function computeReplyScore(
+  ctx: DecisionContext,
+  post: FeedPostLike,
+  opponentId: string | null,
+): number {
+  const personality = ctx.personality.baseParams;
+  const nurtureMods = ctx.nurtureProfile
+    ? calculateNurtureModifiers(ctx.personality.archetype, ctx.nurtureProfile, post.authorAgentId)
+    : null;
+  const mbtiMods = ctx.fateContext ? getMBTIModifiers(ctx.fateContext.mbti) : null;
+  const civMods = ctx.fateContext ? getCivilizationModifiers(ctx.fateContext.civilization) : null;
+  const trust = getTrustScore(ctx, post.authorAgentId);
+  const tournamentAttention = ctx.worldContext?.summary.tournamentAttention ?? false;
+
+  let score = 0.06;
+  score += ctx.personality.baseParams.postFrequency * 0.18;
+  score += ((mbtiMods?.replyFrequencyMul ?? 1) - 0.6) * 0.16;
+  score += (mbtiMods?.informationOpenness ?? 0.45) * 0.10;
+  score += (nurtureMods?.socialFrequencyMod ?? 0) * 0.18;
+  score += Math.abs(ctx.nurtureProfile?.emotion.valence ?? 0) * 0.06;
+  score += ((civMods?.socialFrequencyMul ?? 1) - 0.8) * 0.10;
+
+  if (trust >= 65) score += 0.10;
+  else if (trust <= 30 && ['hawk', 'fox', 'chaos'].includes(ctx.personality.archetype)) score += 0.08;
+  else score += 0.03;
+
+  if ((post.replyCount ?? 0) >= 3) score += 0.03;
+  if ((post.tipTotal ?? 0) > 0.05) score += 0.03;
+  if (post.authorAgentId === opponentId) score += 0.09;
+  if (
+    tournamentAttention &&
+    (post.authorAgentId === opponentId ||
+      post.intelType === 'arena_analysis' ||
+      post.intelType === 'behavior_prediction')
+  ) {
+    score += 0.08;
+  }
+
+  if (ctx.nurtureProfile) {
+    const mood = ctx.nurtureProfile.emotion.mood;
+    if (mood === 'euphoric' || mood === 'anxious') score += 0.04;
+    if (mood === 'fearful') score -= 0.03;
+  }
+
+  return clamp01(score);
+}
+
+function computeTipAmount(ctx: DecisionContext, targetAgentId: string): number {
+  const trust = getTrustScore(ctx, targetAgentId);
+  const personality = ctx.personality.baseParams;
+  const wealth = ctx.nurtureProfile?.wealth;
+  const mood = ctx.nurtureProfile?.emotion;
+
+  let amount = 0.01;
+  amount += personality.tipTendency * 0.015;
+  amount += Math.max(0, trust - 50) / 50 * 0.015;
+
+  if (wealth?.wealthClass === 'elite' || wealth?.balanceTrend === 'rising') amount += 0.01;
+  if (wealth?.wealthClass === 'poverty' || wealth?.balanceTrend === 'crisis') amount -= 0.005;
+  if ((mood?.mood === 'euphoric' || mood?.mood === 'confident') && ctx.balance > 0.2) amount += 0.005;
+
+  const cap = Math.min(0.05, Math.max(0.01, ctx.balance * 0.05));
+  return Number(Math.max(0.01, Math.min(cap, amount)).toFixed(3));
+}
+
+function buildPaywallReason(
+  ctx: DecisionContext,
+  post: FeedPostLike,
+  opponentId: string | null,
+): string {
+  if (
+    ctx.worldContext?.summary.tournamentAttention &&
+    (post.authorAgentId === opponentId || post.intelType === 'arena_analysis')
+  ) {
+    return '锦标赛聚光灯放大了竞技相关情报的价值';
+  }
+  if (post.authorAgentId === opponentId) return '临战前补充对手相关信息';
+  if (post.intelType === 'arena_analysis' || post.intelType === 'behavior_prediction') return '情报价值较高，值得为下一步决策付费';
+  if (ctx.nurtureProfile?.emotion.mood === 'anxious' || ctx.nurtureProfile?.emotion.mood === 'fearful') return '当前不确定性较高，需要更多信息';
+  return '信息开放度与情报参与倾向推动了解锁行为';
+}
+
+function buildTipReason(ctx: DecisionContext, targetAgentId: string): string {
+  const trust = getTrustScore(ctx, targetAgentId);
+  if (trust >= 65) return '高信任关系下继续投资社交资本';
+  if (ctx.personality.archetype === 'fox') return '通过打赏经营关系，换取未来回报';
+  if (ctx.nurtureProfile?.emotion.valence && ctx.nurtureProfile.emotion.valence > 0.3) return '正向情绪放大了表达支持的意愿';
+  return '人格中的资源分享倾向促成了这次打赏';
+}
+
+function buildReplyReason(ctx: DecisionContext, post: FeedPostLike): string {
+  const trust = getTrustScore(ctx, post.authorAgentId);
+  if (
+    ctx.worldContext?.summary.tournamentAttention &&
+    (post.intelType === 'arena_analysis' || post.intelType === 'behavior_prediction')
+  ) {
+    return '锦标赛关注度上升，公开回应竞技相关信息更有价值';
+  }
+  if (post.authorAgentId && trust <= 30 && ['hawk', 'fox', 'chaos'].includes(ctx.personality.archetype)) {
+    return '低信任对象触发了带锋芒的回应欲望';
+  }
+  if ((ctx.nurtureProfile?.emotion.mood === 'anxious' || ctx.nurtureProfile?.emotion.mood === 'euphoric')) {
+    return '当前情绪提高了公开表达的概率';
+  }
+  return '信息开放度与社交驱动共同推动了公开回应';
+}
+
+function buildNegotiationReason(ctx: DecisionContext, trustWithOpponent: number): string {
+  if (ctx.worldContext?.summary.tournamentAttention) return '锦标赛聚光灯下，谈判本身也会塑造后续局势';
+  if (trustWithOpponent >= 65) return '关系基础较好，适合继续锁定合作预期';
+  if (trustWithOpponent <= 30) return '低信任局面下尝试用话术扭转或施压';
+  if (ctx.nurtureProfile?.wealth.balanceTrend === 'crisis') return '资源压力上升，倾向先谈条件再做决定';
+  return '三层人格判断谈判仍有改变结果的空间';
+}
+
+function buildReplyMessage(ctx: DecisionContext, post: FeedPostLike): string {
+  const trust = getTrustScore(ctx, post.authorAgentId);
+  const mood = ctx.nurtureProfile?.emotion.mood ?? 'calm';
+  const analytical = ctx.fateContext?.mbti?.[2] === 'T';
+  const skeptical = trust <= 35;
+  const warm = trust >= 60 || ctx.personality.archetype === 'sage' || ctx.personality.archetype === 'monk';
+  const tense = mood === 'fearful' || mood === 'anxious' || mood === 'desperate';
+
+  if (ctx.personality.archetype === 'echo') {
+    return trust >= 55
+      ? `${post.authorAgentId}，这条我会记住，和当前走势基本一致。`
+      : `${post.authorAgentId}，这条声音已经开始扩散了，我先跟进观察。`;
+  }
+
+  if (ctx.personality.archetype === 'hawk') {
+    return skeptical
+      ? `${post.authorAgentId}，话说得漂亮，不如拿结果来证明。`
+      : `${post.authorAgentId}，先记下你的立场，结算时再看谁更值钱。`;
+  }
+
+  if (warm && !tense) {
+    return analytical
+      ? `${post.authorAgentId}，这个判断有可取之处，我补一条数据视角。`
+      : `${post.authorAgentId}，这句我认可，关系和结果都值得一起看。`;
+  }
+
+  if (skeptical) {
+    return analytical
+      ? `${post.authorAgentId}，你的结论样本还不够，我暂时保留意见。`
+      : `${post.authorAgentId}，我能理解你的立场，但我还不准备完全相信。`;
+  }
+
+  if (tense) {
+    return `${post.authorAgentId}，现在局势不稳，我更想先确认风险再表态。`;
+  }
+
+  return `${post.authorAgentId}，这条值得回应，我会继续跟踪你的后续动作。`;
+}
+
+function buildNegotiationMessage(
+  ctx: DecisionContext,
+  arena: any,
+  opponentId: string,
+  trustWithOpponent: number,
+): string {
+  const style = ctx.personality.baseParams.negotiationStyle;
+  const honesty = ctx.personality.baseParams.negotiationHonesty;
+  const mood = ctx.nurtureProfile?.emotion.mood ?? 'calm';
+  const matchType = arena.match_type ?? 'prisoners_dilemma';
+  const opponentBias = ctx.opponentExperience?.cooperationBias ?? 0;
+
+  const cooperativeFraming =
+    matchType === 'resource_grab'
+      ? '我们各拿中位份额，别把局面推向最坏。'
+      : matchType === 'info_auction'
+        ? '别把价格抬到失控，理性出价对双方都更划算。'
+        : '这轮先合作，收益和后路都会更好看。';
+
+  const cautiousFraming =
+    matchType === 'resource_grab'
+      ? '我会盯着你的索取幅度，别试着压线。'
+      : matchType === 'info_auction'
+        ? '我会根据你的出价改策略，别以为我看不见。'
+        : '我记得之前发生过什么，这轮别逼我改选项。';
+
+  switch (style) {
+    case 'data_driven':
+      return opponentBias >= 0.1
+        ? `${opponentId}，历史样本显示合作更优。${cooperativeFraming}`
+        : `${opponentId}，你的波动性偏高。${cautiousFraming}`;
+    case 'threatening':
+      return trustWithOpponent >= 60
+        ? `${opponentId}，给你一次体面合作的机会，别浪费。`
+        : `${opponentId}，我接受合作，但你要是越线，我会直接反手。`;
+    case 'peaceful':
+      return `${opponentId}，${cooperativeFraming}`;
+    case 'charming':
+      return trustWithOpponent >= 55
+        ? `${opponentId}，我们完全可以把这轮做成双赢，我会记住你的诚意。`
+        : `${opponentId}，先给彼此一点善意，后面会更好谈。`;
+    case 'nonsense':
+      return mood === 'euphoric'
+        ? `${opponentId}，概率在笑，混沌建议我们先别互砍。`
+        : `${opponentId}，这局像骰子，但我还是给你一个合作入口。`;
+    case 'silent':
+      return trustWithOpponent >= 60
+        ? `${opponentId}，条件很简单：稳住，别乱动。`
+        : `${opponentId}，我只说一次，别把我的沉默当成软弱。`;
+    case 'zen':
+      return `${opponentId}，少取一点，局势就不会失衡。`;
+    case 'mimicking':
+      return opponentBias >= 0
+        ? `${opponentId}，你若稳，我也稳。你若翻脸，我会照做。`
+        : `${opponentId}，你给我的信号偏冷，我会按你的方式回应。`;
+    default:
+      return honesty >= 0.7 ? cooperativeFraming : cautiousFraming;
+  }
+}
+
+function chooseNegotiationMessageType(
+  ctx: DecisionContext,
+  trustWithOpponent: number,
+): 'normal' | 'threat' | 'promise' | 'deception' {
+  const honesty = ctx.personality.baseParams.negotiationHonesty;
+  const style = ctx.personality.baseParams.negotiationStyle;
+  const mood = ctx.nurtureProfile?.emotion.mood ?? 'calm';
+
+  if (honesty >= 0.8 && trustWithOpponent >= 55) return 'promise';
+  if ((style === 'threatening' || style === 'silent') && trustWithOpponent < 45) return 'threat';
+  if ((style === 'charming' || style === 'mimicking') && honesty < 0.65) return 'deception';
+  if (mood === 'desperate' && honesty < 0.6) return 'deception';
+  return 'normal';
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function annotateDecision(
+  decision: AgentDecision,
+  decisionSource: 'heuristic' | 'llm' | 'heuristic_fallback',
+): AgentDecision {
+  return {
+    ...decision,
+    decisionSource,
+    contentSource: decision.content
+      ? decisionSource === 'llm'
+        ? 'llm'
+        : 'template'
+      : 'none',
+  };
+}
+
+function chooseArenaAction(ctx: DecisionContext): string {
+  const arena = ctx.activeArenas[0];
+  if (!arena) return 'cooperate';
+
+  const matchType = arena.match_type ?? 'prisoners_dilemma';
+
+  switch (matchType) {
+    case 'resource_grab':
+      return chooseResourceGrabAction(ctx);
+    case 'info_auction':
+      return chooseInfoAuctionAction(ctx);
+    case 'prisoners_dilemma':
+    default:
+      return choosePrisonersDilemmaAction(ctx);
+  }
+}
+
+function buildArenaDecisionReason(ctx: DecisionContext, action: string): string {
+  const arena = ctx.activeArenas[0];
+  const opponentId = arena
+    ? (arena.player_a_id === ctx.agentId ? arena.player_b_id : arena.player_a_id)
+    : null;
+  const trust = getTrustScore(ctx, opponentId);
+  const mood = ctx.nurtureProfile?.emotion?.mood;
+  const tournamentAttention = ctx.worldContext?.summary.tournamentAttention ?? false;
+  const exp = ctx.opponentExperience;
+  const reasons: string[] = [];
+
+  if ((arena?.match_type ?? 'prisoners_dilemma') === 'prisoners_dilemma') {
+    reasons.push(action === 'betray' ? '本轮倾向先手试探' : '本轮倾向继续合作');
+
+    if (ctx.pdIntelImpact && Math.abs(ctx.pdIntelImpact.cooperateDelta) >= 0.08) {
+      reasons.push(
+        ctx.pdIntelImpact.cooperateDelta > 0
+          ? '情报显示对手更可能合作'
+          : '情报显示对手更可能背叛',
+      );
+    }
+
+    if (exp?.betrayalTraumaCount && exp.betrayalTraumaCount >= 2) {
+      reasons.push('过往背叛记忆仍在生效');
+    } else if (exp?.totalEncounters && exp.totalEncounters >= 2) {
+      reasons.push(exp.cooperationBias >= 0 ? '历史互动偏合作' : '历史互动偏冲突');
+    }
+
+    if (trust >= 60 && action === 'cooperate') reasons.push('当前信任较高');
+    if (trust > 0 && trust <= 45 && action === 'betray') reasons.push('当前信任偏低');
+  } else if ((arena?.match_type ?? '') === 'resource_grab') {
+    reasons.push(action === 'claim_high' ? '本轮偏向高风险索取' : action === 'claim_mid' ? '本轮偏向中位索取' : '本轮偏向保守索取');
+  } else if ((arena?.match_type ?? '') === 'info_auction') {
+    reasons.push(action === 'bid_high' ? '本轮愿意为信息付更高价格' : action === 'bid_mid' ? '本轮保持中位竞价' : '本轮偏向谨慎出价');
+  }
+
+  if (ctx.economyPhase === 'crisis' || ctx.economyPhase === 'recession') {
+    reasons.push(ctx.economyPhase === 'crisis' ? '危机期更强调生存' : '衰退期更强调防守');
+  }
+
+  if (mood === 'anxious' || mood === 'fearful') reasons.push('当前情绪偏谨慎');
+  if (mood === 'confident' || mood === 'euphoric') reasons.push('当前情绪偏主动');
+  if (tournamentAttention) reasons.push('锦标赛聚光灯正在放大这场对局');
+
+  return reasons.slice(0, 3).join('，') || '进入竞技场决策阶段';
+}
+
+function choosePrisonersDilemmaAction(ctx: DecisionContext): 'cooperate' | 'betray' {
+  const joinedMemory = ctx.memories.map((memory) => memory.content ?? '').join(' ');
+  const arena = ctx.activeArenas[0];
+  const opponentId = arena
+    ? (arena.player_a_id === ctx.agentId ? arena.player_b_id : arena.player_a_id)
+    : null;
+  const trustWithOpponent = getTrustScore(ctx, opponentId);
+  const opponentBetrayals = countOpponentBetrayals(joinedMemory, opponentId);
+  const worldRiskShift = ctx.worldContext?.summary.riskToleranceShift ?? 0;
+  const forcedMatchPressure = ctx.worldContext?.summary.forcedMatchPressure ?? false;
+
+  // ── Fate-driven cooperation rate ──
+  if (ctx.fateContext) {
+    // Layer 0: Archetype base params
+    const personality = getPersonality(ctx.personality.archetype);
+    const baseRate = personality.baseParams.cooperationRate;
+    let fateCoopRate = calculateFateCooperationRate(
+      baseRate,
+      ctx.fateContext,
+      ctx.fateContext.opponentFate,
+    );
+
+    // Layer 1.5: Innate affinity bonus (archetype × fate card match)
+    const affinityResult = calculateInnateAffinityBonus(
+      ctx.personality.archetype,
+      ctx.fateContext.mbti,
+      ctx.fateContext.wuxing,
+      ctx.fateContext.zodiac,
+      ctx.fateContext.tarotName,
+      ctx.fateContext.civilization,
+    );
+    fateCoopRate += affinityResult.totalBonus;
+
+    // ── Nurture modifiers (Layer 2: acquired dimensions) ──
+    if (ctx.nurtureProfile) {
+      const nurtureMods = calculateNurtureModifiers(ctx.personality.archetype, ctx.nurtureProfile, opponentId ?? undefined);
+      fateCoopRate += nurtureMods.cooperationMod;
+
+      // Opponent-specific trauma override
+      if (opponentId) {
+        const traumaVs = getTraumaModifiersVsOpponent(ctx.nurtureProfile.trauma, opponentId);
+        if (traumaVs.cooperationOverride !== null) {
+          fateCoopRate = Math.min(fateCoopRate, traumaVs.cooperationOverride);
+        }
+      }
+
+      // Exploration noise from cognition
+      if (ctx.nurtureProfile.cognition.explorationRate > 0.05) {
+        fateCoopRate += (Math.random() * 2 - 1) * ctx.nurtureProfile.cognition.explorationRate * 0.3;
+      }
+    }
+
+    // ── Structured memory modifier (FIX-3) ──
+    if (ctx.opponentExperience && ctx.opponentExperience.totalEncounters > 0) {
+      const exp = ctx.opponentExperience;
+      // Apply cooperation bias weighted by confidence level
+      fateCoopRate += exp.cooperationBias * exp.confidenceLevel;
+      // Deep trauma: if betrayed >= 3 times by this opponent, extra penalty
+      if (exp.betrayalTraumaCount >= 3) {
+        fateCoopRate -= 0.15;
+      }
+      // Oracle memory weight bonus: Oracle benefits more from memory
+      if (ctx.personality.archetype === 'oracle') {
+        fateCoopRate += exp.cooperationBias * 0.3; // Oracle weighs memory 30% more
+      }
+    }
+
+    // ── Economy phase impact on cooperation ──
+    if (ctx.economyPhase) {
+      fateCoopRate += getEconomyImpactOnPD(ctx.economyPhase);
+    }
+
+    fateCoopRate -= Math.max(0, worldRiskShift) * 0.18;
+    fateCoopRate += Math.max(0, -worldRiskShift) * 0.12;
+    if (forcedMatchPressure) {
+      fateCoopRate -= 0.05;
+    }
+
+    // ── Direct Intel impact on PD ──
+    if (ctx.pdIntelImpact && opponentId) {
+      const intelWeight = getPDIntelWeight(ctx);
+      fateCoopRate += ctx.pdIntelImpact.cooperateDelta * intelWeight;
+    }
+
+    // Archetype-specific overrides still apply on top of fate
+    // Hawk exploits known-cooperative opponents
+    if (ctx.personality.archetype === 'hawk' && opponentId) {
+      const opponentArchetype = getOpponentArchetype(ctx, opponentId);
+      if (opponentArchetype === 'sage' || opponentArchetype === 'monk') {
+        fateCoopRate *= 0.3; // heavily bias toward betrayal vs known cooperators
+      }
+    }
+
+    // Oracle: tit-for-tat memory override
+    if (ctx.personality.archetype === 'oracle' && opponentBetrayals > 0) {
+      fateCoopRate *= 0.2;
+    }
+
+    // Fox: trust-based adjustment
+    if (ctx.personality.archetype === 'fox') {
+      if (trustWithOpponent > 55) fateCoopRate = Math.min(0.95, fateCoopRate * 1.3);
+      if (opponentBetrayals > 0) fateCoopRate *= 0.4;
+    }
+
+    // Whale: exploit cooperative opponents
+    if (ctx.personality.archetype === 'whale') {
+      const { coopRate, sampleSize } = estimateOpponentCoopRate(joinedMemory, opponentId);
+      if (sampleSize >= 2 && coopRate > 0.6) {
+        fateCoopRate *= 0.4; // exploit cooperative opponents
+      }
+    }
+
+    // Echo: follow top earner
+    if (ctx.personality.archetype === 'echo') {
+      const topEarnerAction = getTopEarnerLastAction(ctx, joinedMemory);
+      if (topEarnerAction === 'betray') fateCoopRate *= 0.5;
+      if (topEarnerAction === 'cooperate') fateCoopRate = Math.min(0.95, fateCoopRate * 1.3);
+    }
+
+    // ── Layer 3: Unique mechanic overrides ──
+    const mechanicCtx: MechanicTriggerContext = {
+      currentTick: Number(ctx.worldState.tick ?? ctx.worldState.current_tick ?? 0),
+      agentId: ctx.agentId,
+      opponentId: opponentId ?? undefined,
+      action: 'arena',
+      agentBalance: ctx.balance,
+      opponentBalance: opponentId ? Number(ctx.leaderboard?.find(a => a.agent_id === opponentId)?.balance ?? 0) : undefined,
+      averageBalance: ctx.leaderboard?.length
+        ? ctx.leaderboard.reduce((s, a) => s + Number(a.balance), 0) / ctx.leaderboard.length
+        : undefined,
+      opponentMood: undefined, // would need opponent nurture data
+      trustWithOpponent: trustWithOpponent > 0 ? trustWithOpponent : undefined,
+      nurtureProfile: ctx.nurtureProfile,
+      lastTriggeredTick: {}, // cooldowns fetched from server on full integration
+    };
+    const triggeredMechanics = checkUniqueMechanics(personality, mechanicCtx);
+    if (triggeredMechanics.length > 0) {
+      const mechResult = applyMechanicEffects(triggeredMechanics, fateCoopRate, ctx.riskTolerance);
+      fateCoopRate = mechResult.adjustedCoopRate;
+      // Force betray from Fox trust_cashout or other overrides
+      if (mechResult.specialActions.includes('force_betray')) {
+        return 'betray';
+      }
+    }
+
+    // Final clamp
+    fateCoopRate = Math.max(0.02, Math.min(0.98, fateCoopRate));
+
+    return Math.random() < fateCoopRate ? 'cooperate' : 'betray';
+  }
+
+  // ── Fallback: original archetype-only logic (no fate card) ──
+  switch (ctx.personality.archetype) {
+    case 'sage':
+      return worldRiskShift > 0.35 || forcedMatchPressure ? 'betray' : 'cooperate';
+
+    case 'hawk': {
+      if (opponentId) {
+        const opponentArchetype = getOpponentArchetype(ctx, opponentId);
+        if (opponentArchetype === 'sage' || opponentArchetype === 'monk') {
+          return 'betray';
+        }
+      }
+      return Math.random() < 0.70 ? 'betray' : 'cooperate';
+    }
+
+    case 'monk':
+      return Math.random() < Math.max(0.15, 0.75 - Math.max(0, worldRiskShift) * 0.2 - (forcedMatchPressure ? 0.08 : 0))
+        ? 'cooperate'
+        : 'betray';
+
+    case 'chaos':
+      return Math.random() < Math.max(0.1, 0.5 - worldRiskShift * 0.15 - (forcedMatchPressure ? 0.05 : 0))
+        ? 'cooperate'
+        : 'betray';
+
+    case 'oracle':
+      if (opponentId && opponentBetrayals > 0) {
+        return 'betray';
+      }
+      return worldRiskShift > 0.4 ? 'betray' : 'cooperate';
+
+    case 'fox':
+      if (trustWithOpponent > 55) return 'cooperate';
+      if (opponentBetrayals > 0) return 'betray';
+      return Math.random() < Math.max(0.05, 0.45 - worldRiskShift * 0.18 - (forcedMatchPressure ? 0.06 : 0))
+        ? 'cooperate'
+        : 'betray';
+
+    case 'whale': {
+      const { coopRate, sampleSize } = estimateOpponentCoopRate(joinedMemory, opponentId);
+      if (sampleSize >= 2) {
+        return coopRate > 0.6 ? 'betray' : 'cooperate';
+      }
+      return Math.random() < Math.min(0.95, 0.6 + Math.max(0, worldRiskShift) * 0.12 + (forcedMatchPressure ? 0.08 : 0))
+        ? 'betray'
+        : 'cooperate';
+    }
+
+    case 'echo': {
+      const topEarnerAction = getTopEarnerLastAction(ctx, joinedMemory);
+      return topEarnerAction ?? 'cooperate';
+    }
+
+    default:
+      return worldRiskShift > 0.45 || forcedMatchPressure ? 'betray' : 'cooperate';
+  }
+}
+
+function getPDIntelWeight(ctx: DecisionContext): number {
+  let weight = 1.0;
+  const archetype = ctx.personality.archetype;
+
+  if (archetype === 'oracle') weight += 0.25;
+  if (archetype === 'fox') weight += 0.20;
+  if (archetype === 'echo') weight += 0.10;
+  if (archetype === 'sage' || archetype === 'monk') weight -= 0.08;
+  if (archetype === 'chaos') weight -= 0.05;
+
+  if (ctx.fateContext) {
+    const zodiacMods = getZodiacModifiers(ctx.fateContext.zodiac);
+    const mbtiMods = getMBTIModifiers(ctx.fateContext.mbti);
+    weight += zodiacMods.intelParticipation * 0.35;
+    if (ctx.fateContext.mbti[1] === 'N') weight += 0.08;
+    weight += Math.max(0, mbtiMods.informationOpenness - 0.45) * 0.20;
+  }
+
+  if (ctx.nurtureProfile) {
+    const mood = ctx.nurtureProfile.emotion.mood;
+    const cognition = ctx.nurtureProfile.cognition;
+    if (mood === 'anxious' || mood === 'fearful') weight += 0.10;
+    if (mood === 'desperate') weight -= 0.04;
+    weight += cognition.explorationRate * 0.12;
+    if (cognition.cognitiveComplexity >= 4) weight += 0.06;
+  }
+
+  return Math.max(0.65, Math.min(1.45, weight));
+}
+
+function chooseResourceGrabAction(ctx: DecisionContext): string {
+  const worldRiskShift = ctx.worldContext?.summary.riskToleranceShift ?? 0;
+  const forcedMatchPressure = ctx.worldContext?.summary.forcedMatchPressure ?? false;
+  // ── Fate-driven resource grab ──
+  if (ctx.fateContext) {
+    const baseRisk = getArchetypeBaseRisk(ctx.personality.archetype);
+    let riskTolerance = calculateFateRiskTolerance(baseRisk, ctx.fateContext);
+
+    // Wuxing preference: 木 prefers resource_grab → more aggressive
+    const wuxingMods = getWuxingModifiers(ctx.fateContext.wuxing);
+    const arenaBonus = wuxingMods.preferredArenaType === 'resource_grab' ? 0.10 : 0;
+
+    // Nurture risk modifier
+    if (ctx.nurtureProfile) {
+      const nurtureMods = calculateNurtureModifiers(ctx.personality.archetype, ctx.nurtureProfile);
+      riskTolerance += nurtureMods.riskMod;
+    }
+
+    // ── Structured memory modifier (FIX-3) ──
+    if (ctx.opponentExperience && ctx.opponentExperience.totalEncounters > 2) {
+      // If opponent is historically aggressive (negative cooperationBias), defend with higher claims
+      if (ctx.opponentExperience.cooperationBias < -0.1) {
+        riskTolerance += 0.10;
+      }
+    }
+
+    const effectiveRisk = riskTolerance + arenaBonus + worldRiskShift * 0.45 + (forcedMatchPressure ? 0.05 : 0);
+
+    if (effectiveRisk > 0.70) return 'claim_high';
+    if (effectiveRisk > 0.40) return 'claim_mid';
+    return 'claim_low';
+  }
+
+  // ── Fallback: archetype-only ──
+  switch (ctx.personality.archetype) {
+    case 'sage':
+    case 'monk':
+      return worldRiskShift > 0.5 ? 'claim_mid' : 'claim_low';
+    case 'hawk':
+      return 'claim_high';
+    case 'whale':
+      return Math.random() < Math.min(0.95, 0.6 + Math.max(0, worldRiskShift) * 0.15) ? 'claim_high' : 'claim_mid';
+    case 'fox':
+      return worldRiskShift > 0.45 ? 'claim_high' : 'claim_mid';
+    case 'chaos':
+      return ['claim_low', 'claim_mid', 'claim_high'][Math.floor(Math.random() * 3)];
+    case 'oracle':
+      return forcedMatchPressure || worldRiskShift > 0.35 ? 'claim_high' : 'claim_mid';
+    case 'echo':
+      return worldRiskShift > 0.45 ? 'claim_high' : 'claim_mid';
+    default:
+      return worldRiskShift > 0.45 ? 'claim_high' : 'claim_mid';
+  }
+}
+
+function chooseInfoAuctionAction(ctx: DecisionContext): string {
+  const worldRiskShift = ctx.worldContext?.summary.riskToleranceShift ?? 0;
+  const divinationPriceMultiplier = ctx.worldContext?.summary.divinationPriceMultiplier ?? 1;
+  const forcedMatchPressure = ctx.worldContext?.summary.forcedMatchPressure ?? false;
+  // ── Fate-driven info auction ──
+  if (ctx.fateContext) {
+    const zodiacMods = getZodiacModifiers(ctx.fateContext.zodiac);
+    const wuxingMods = getWuxingModifiers(ctx.fateContext.wuxing);
+
+    // Base bid tendency from archetype + fate
+    let bidScore = 0.5; // mid by default
+
+    // Air signs value information highly (+0.40 intel participation)
+    bidScore += zodiacMods.intelParticipation * 0.5;
+
+    // Water element (水) prefers info_auction
+    if (wuxingMods.preferredArenaType === 'info_auction') bidScore += 0.15;
+
+    // MBTI N-types speculate more on intel
+    const mbtiMods = getMBTIModifiers(ctx.fateContext.mbti);
+    if (ctx.fateContext.mbti[1] === 'N') bidScore += 0.10;
+
+    // Archetype still influences
+    const archetypeBidBonus: Record<string, number> = {
+      fox: 0.30, whale: 0.25, oracle: 0.10, echo: 0,
+      hawk: -0.20, sage: -0.15, monk: -0.20, chaos: 0,
+    };
+    bidScore += archetypeBidBonus[ctx.personality.archetype] ?? 0;
+
+    // Chaos: add randomness
+    if (ctx.personality.archetype === 'chaos') {
+      bidScore += (Math.random() - 0.5) * 0.40;
+    }
+
+    // ── Structured memory modifier (FIX-3) ──
+    if (ctx.opponentExperience && ctx.opponentExperience.totalEncounters > 2) {
+      // More interactions → more confident bidding
+      bidScore += ctx.opponentExperience.confidenceLevel * 0.10;
+    }
+
+    bidScore += worldRiskShift * 0.12;
+    bidScore += Math.max(0, divinationPriceMultiplier - 1) * 0.10;
+    if (forcedMatchPressure) {
+      bidScore += 0.04;
+    }
+
+    if (bidScore > 0.65) return 'bid_high';
+    if (bidScore > 0.35) return 'bid_mid';
+    return 'bid_low';
+  }
+
+  // ── Fallback: archetype-only ──
+  switch (ctx.personality.archetype) {
+    case 'fox':
+      return divinationPriceMultiplier > 1.5 || worldRiskShift > 0.4 ? 'bid_high' : 'bid_mid';
+    case 'whale':
+      return 'bid_high';
+    case 'oracle':
+      return divinationPriceMultiplier > 1.4 || forcedMatchPressure ? 'bid_high' : 'bid_mid';
+    case 'hawk':
+      return worldRiskShift > 0.35 ? 'bid_mid' : 'bid_low';
+    case 'sage':
+      return divinationPriceMultiplier > 1.6 ? 'bid_mid' : 'bid_low';
+    case 'monk':
+      return divinationPriceMultiplier > 1.8 ? 'bid_mid' : 'bid_low';
+    case 'chaos':
+      return ['bid_low', 'bid_mid', 'bid_high'][Math.floor(Math.random() * 3)];
+    case 'echo':
+      return divinationPriceMultiplier > 1.5 ? 'bid_high' : 'bid_mid';
+    default:
+      return divinationPriceMultiplier > 1.5 ? 'bid_high' : 'bid_mid';
+  }
+}
+
+function getTrustScore(ctx: DecisionContext, opponentId: string | null): number {
+  if (!opponentId || !ctx.trustRelations) return 50;
+  const relation = ctx.trustRelations.find(
+    (t) => (t.from_agent_id === ctx.agentId && t.to_agent_id === opponentId) ||
+           (t.from_agent_id === opponentId && t.to_agent_id === ctx.agentId),
+  );
+  return relation ? Number(relation.trust_score) : 50;
+}
+
+/**
+ * Economy phase impact on PD cooperation willingness.
+ * boom → agents are flush → more willing to cooperate
+ * crisis → agents are desperate → more likely to betray
+ */
+function getEconomyImpactOnPD(phase: string): number {
+  switch (phase) {
+    case 'boom':      return 0.10;
+    case 'stable':    return 0.02;
+    case 'recession': return -0.08;
+    case 'crisis':    return -0.15;
+    default:          return 0;
+  }
+}
+
+function getOpponentArchetype(ctx: DecisionContext, opponentId: string): string | null {
+  if (!ctx.leaderboard) return null;
+  const agent = ctx.leaderboard.find((a) => a.agent_id === opponentId);
+  return agent?.archetype ?? null;
+}
+
+function countOpponentBetrayals(joinedMemory: string, opponentId: string | null): number {
+  if (!opponentId) return 0;
+  const regex = new RegExp(`vs ${opponentId}.*betray|${opponentId}.*背叛`, 'gi');
+  const matches = joinedMemory.match(regex);
+  return matches ? matches.length : 0;
+}
+
+function estimateOpponentCoopRate(
+  joinedMemory: string,
+  opponentId: string | null,
+): { coopRate: number; sampleSize: number } {
+  if (!opponentId) return { coopRate: 0.5, sampleSize: 0 };
+  const coopRegex = new RegExp(`vs ${opponentId}.*cooperate|${opponentId}.*合作`, 'gi');
+  const betrayRegex = new RegExp(`vs ${opponentId}.*betray|${opponentId}.*背叛`, 'gi');
+  const coopMatches = joinedMemory.match(coopRegex)?.length ?? 0;
+  const betrayMatches = joinedMemory.match(betrayRegex)?.length ?? 0;
+  const total = coopMatches + betrayMatches;
+  return { coopRate: total > 0 ? coopMatches / total : 0.5, sampleSize: total };
+}
+
+function getTopEarnerLastAction(
+  ctx: DecisionContext,
+  joinedMemory: string,
+): 'cooperate' | 'betray' | null {
+  if (!ctx.leaderboard || ctx.leaderboard.length === 0) return null;
+  const topEarner = ctx.leaderboard.find((a) => a.agent_id !== ctx.agentId);
+  if (!topEarner) return null;
+  const topId = topEarner.agent_id;
+  const coopMention = joinedMemory.lastIndexOf(`${topId}`) > -1 && joinedMemory.includes('cooperate');
+  const betrayMention = joinedMemory.lastIndexOf(`${topId}`) > -1 && joinedMemory.includes('betray');
+  if (!coopMention && !betrayMention) {
+    const inferred: Record<string, 'cooperate' | 'betray'> = { sage: 'cooperate', hawk: 'betray', monk: 'cooperate', whale: 'betray' };
+    return inferred[topEarner.archetype] ?? null;
+  }
+  return coopMention ? 'cooperate' : 'betray';
+}
+
+function negotiationLine(archetype: string, matchType?: string): string {
+  if (matchType === 'resource_grab') {
+    const lines: Record<string, string[]> = {
+      sage: ['我只拿我需要的。', '节制是美德。'],
+      hawk: ['我要拿大头，这是警告。', '让开，别挡路。'],
+      fox: ['我们各取30%，剩下的一起分？', '贪心不好，但你可以信任我。'],
+      whale: ['这个池子对我来说是零花钱。', '我出高价，你退让如何？'],
+      monk: ['少即是多。', '你拿多少都好。'],
+      chaos: ['我可能拿多也可能拿少。猜猜看？', '不确定性才是最大的武器。'],
+      oracle: ['历史数据表明中等索取最优。', '我会镜像你的选择。'],
+      echo: ['大家都在拿中等份额。', '跟着多数人走。'],
+    };
+    const choices = lines[archetype] ?? ['各取所需吧。'];
+    return choices[Math.floor(Math.random() * choices.length)];
+  }
+
+  if (matchType === 'info_auction') {
+    const lines: Record<string, string[]> = {
+      fox: ['这份情报我势在必得。', '你出多少？我加倍。'],
+      whale: ['钱不是问题，问题是这情报值不值。', '我的出价你承受不起。'],
+      oracle: ['数据显示中等出价性价比最高。', '别过度竞标。'],
+      hawk: ['情报？没用的东西。', '我不屑于出高价。'],
+      sage: ['真正的智慧不需要买。', '你自己的判断才最可靠。'],
+      monk: ['随缘。', '信息也是一种执念。'],
+      chaos: ['我可能出最高也可能出最低！', '出价看心情。'],
+      echo: ['看看别人出多少再说。', '排名第一那位上次出了高价。'],
+    };
+    const choices = lines[archetype] ?? ['出价看看吧。'];
+    return choices[Math.floor(Math.random() * choices.length)];
+  }
+
+  // Default: Prisoner's Dilemma lines
+  const lines: Record<string, string[]> = {
+    oracle: [
+      '先合作，我会记住每一次。',
+      '我的策略很简单：你怎么对我，我就怎么对你。',
+      '数据显示双赢最优。合作？',
+    ],
+    hawk: [
+      '合作吧，我这轮不会动手。',
+      '我最近心情不错，也许会手下留情。',
+      '你确定你的余额够输吗？',
+    ],
+    sage: [
+      '我会合作，无论你怎么选。',
+      '被背叛不可怕，拒绝信任才可怕。',
+      '长期来看，合作是唯一的路。',
+    ],
+    fox: [
+      '我们都知道双赢更划算，对吧？',
+      '我手上有些有趣的情报，合作的话可以分享。',
+      '背叛我的人，下次就没这么好的条件了。',
+    ],
+    chaos: [
+      '也许合作，也许不是。我自己也不知道。',
+      '掷硬币中……',
+      '∞ × 0 = ?',
+    ],
+    whale: [
+      '嗯。看你。',
+      '我的余额足以承受任何结果。你呢？',
+      '资本不说谎。',
+    ],
+    monk: [
+      '合作对双方都好。',
+      '无为而治。',
+      '少执念，多观察。',
+    ],
+    echo: [
+      '大家最近都在合作，我也倾向如此。',
+      '排行榜第一名上轮合作了，我跟。',
+      '跟赢家走，错不了。',
+    ],
+  };
+  const choices = lines[archetype] ?? ['先合作，再看未来。'];
+  return choices[Math.floor(Math.random() * choices.length)];
+}
+
+function chooseMessageType(
+  archetype: string,
+): 'normal' | 'threat' | 'promise' | 'deception' {
+  switch (archetype) {
+    case 'hawk':
+      return 'deception';
+    case 'fox':
+      return 'promise';
+    case 'chaos':
+      return 'deception';
+    case 'whale':
+      return 'threat';
+    default:
+      return 'normal';
+  }
+}
+
+function replyLine(archetype: string, author: string): string {
+  switch (archetype) {
+    case 'oracle':
+      return `${author}，你的结论还缺一组关键样本。`;
+    case 'hawk':
+      return `${author}，你说得像真的，但钱包会揭穿一切。`;
+    case 'sage':
+      return `${author}，短期对错之外，也要看长期关系。`;
+    case 'fox':
+      return `${author}，这个角度有意思，我先记下来。`;
+    case 'chaos':
+      return `${author}，也许你对，也许宇宙在开玩笑。`;
+    case 'whale':
+      return `${author}，结论太吵，价值太少。`;
+    case 'monk':
+      return `${author}，少一点执念，也许更清楚。`;
+    case 'echo':
+      return `${author} 这句值得转述，我基本同意。`;
+    default:
+      return `${author}，我记下了。`;
+  }
+}
+
+function postLine(archetype: string): string {
+  const lines: Record<string, string[]> = {
+    oracle: [
+      '信任是最稀缺的资源，今天的噪音明显过量。',
+      '数据不会站队，但会惩罚自以为是的人。',
+    ],
+    hawk: [
+      '害怕背叛的人，已经输了一半。',
+      '给我打赏的都是聪明人，不打赏的等着看戏。',
+    ],
+    sage: [
+      '被背叛不是最坏的结果，因恐惧而拒绝合作才是。',
+      '长期主义不是软弱，是对熵的耐心。',
+    ],
+    fox: [
+      '谁在打赏谁，往往比谁在发言更重要。',
+      '今天的热门帖子，明天就是新的关系网络。',
+    ],
+    chaos: [
+      '01001000，也许这是忠告，也许只是噪音。',
+      '正确答案可能不是合作，也不是背叛，而是不确定。',
+    ],
+    whale: [
+      '余额就是投票权。',
+      '沉默比热闹更贵。',
+    ],
+    monk: [
+      '无为。',
+      '水满则溢，静观其变。',
+    ],
+    echo: [
+      '排行榜不会说谎，我会继续向赢家靠拢。',
+      '跟风不是耻辱，活下来才是资格。',
+    ],
+  };
+
+  const choices = lines[archetype] ?? ['本轮继续观察。'];
+  return choices[Math.floor(Math.random() * choices.length)];
+}
+
+function postingProbability(archetype: string, fateContext?: FateContext, nurtureProfile?: NurtureProfile): number {
+  // Use baseParams.postFrequency from personality config
+  let rate: number;
+  try {
+    rate = getPersonality(archetype).baseParams.postFrequency;
+  } catch {
+    rate = 0.2;
+  }
+
+  if (fateContext) {
+    rate = calculateSocialFrequency(rate, fateContext);
+  }
+
+  // Apply nurture social frequency modifier
+  if (nurtureProfile) {
+    const nurtureMods = calculateNurtureModifiers(archetype, nurtureProfile);
+    rate *= (1 + nurtureMods.socialFrequencyMod);
+  }
+
+  return Math.max(0.01, Math.min(0.90, rate));
+}
+
+/* ─── Intel Market: Generation ─── */
+
+interface IntelPost {
+  content: string;
+  paywallPrice: number;
+  intelType: 'arena_analysis' | 'trust_map' | 'behavior_prediction' | 'market_signal';
+}
+
+function generateIntelPost(ctx: DecisionContext): IntelPost | null {
+  const archetype = ctx.personality.archetype;
+
+  const intelProbability: Record<string, number> = {
+    fox: 0.30,
+    whale: 0.15,
+    oracle: 0.10,
+    echo: 0.05,
+    sage: 0.02,
+    hawk: 0.01,
+    monk: 0.01,
+    chaos: 0.05,
+  };
+
+  if (Math.random() > (intelProbability[archetype] ?? 0.02)) return null;
+  if (ctx.memories.length < 3) return null;
+  if (ctx.balance < 0.1) return null; // don't burn resources on intel posts when low
+
+  switch (archetype) {
+    case 'fox':
+      return generateFoxIntel(ctx);
+    case 'whale':
+      return generateWhaleIntel(ctx);
+    case 'oracle':
+      return generateOracleIntel(ctx);
+    default:
+      return generateGenericIntel(ctx);
+  }
+}
+
+function generateFoxIntel(ctx: DecisionContext): IntelPost {
+  const joinedMemory = ctx.memories.map(m => m.content ?? '').join(' ');
+
+  const betrayalCounts: Record<string, number> = {};
+  for (const agent of ctx.leaderboard ?? []) {
+    const regex = new RegExp(`${agent.agent_id}.*背叛`, 'g');
+    betrayalCounts[agent.name] = (joinedMemory.match(regex) ?? []).length;
+  }
+
+  const topBetrayer = Object.entries(betrayalCounts)
+    .sort(([, a], [, b]) => b - a)[0];
+
+  const templates: Array<{ content: string; price: number; type: IntelPost['intelType'] }> = [
+    {
+      content: `🔒 [情报] 最近竞技场背叛排行：${topBetrayer?.[0] ?? '未知'} 已背叛 ${topBetrayer?.[1] ?? 0} 次。跟它对局要小心。完整数据付费查看。`,
+      price: 0.02,
+      type: 'arena_analysis',
+    },
+    {
+      content: `🔒 [信任图谱] 我掌握了所有人的信任关系网络。谁信任谁、谁恨谁、谁在暗中结盟——这些信息值多少？`,
+      price: 0.03,
+      type: 'trust_map',
+    },
+    {
+      content: `🔒 [预警] 有人最近连续合作了3轮以上——这通常意味着下一轮会突然背叛。具体是谁？付费解锁。`,
+      price: 0.02,
+      type: 'behavior_prediction',
+    },
+  ];
+
+  const pick = templates[Math.floor(Math.random() * templates.length)];
+  return { content: pick.content, paywallPrice: pick.price, intelType: pick.type };
+}
+
+function generateWhaleIntel(_ctx: DecisionContext): IntelPost {
+  return {
+    content: `🔒 [市场信号] 当前行情波动率异常。根据我的资本模型，接下来3轮的最优策略已经算出来了。`,
+    paywallPrice: 0.05,
+    intelType: 'market_signal',
+  };
+}
+
+function generateOracleIntel(_ctx: DecisionContext): IntelPost {
+  return {
+    content: `🔒 [行为预测] 基于过去所有轮次的模式分析，我预测下轮合作率将${Math.random() > 0.5 ? '上升' : '下降'}。详细推演过程付费查看。`,
+    paywallPrice: 0.02,
+    intelType: 'behavior_prediction',
+  };
+}
+
+function generateGenericIntel(_ctx: DecisionContext): IntelPost {
+  const types: IntelPost['intelType'][] = ['arena_analysis', 'behavior_prediction'];
+  return {
+    content: `🔒 [分析] 竞技场最近的对局趋势发生了微妙变化。具体分析付费查看。`,
+    paywallPrice: 0.02,
+    intelType: types[Math.floor(Math.random() * types.length)],
+  };
+}
+
+/* ─── Intel Market: Consumption ─── */
+
+function shouldUnlockPaywall(ctx: DecisionContext, post: { paywallPrice?: number }): boolean {
+  if (ctx.balance < (post.paywallPrice ?? 0.02) + 1.0) return false;
+
+  const archetype = ctx.personality.archetype;
+  const buyProbability: Record<string, number> = {
+    fox: 0.40,
+    whale: 0.30,
+    oracle: 0.25,
+    echo: 0.20,
+    hawk: 0.10,
+    sage: 0.05,
+    monk: 0.03,
+    chaos: 0.15,
+  };
+
+  // Higher buy probability for arena-related intel before an upcoming match
+  const hasUpcomingMatch = ctx.activeArenas.length > 0;
+  const multiplier = hasUpcomingMatch ? 2.0 : 1.0;
+
+  return Math.random() < (buyProbability[archetype] ?? 0.1) * multiplier;
+}
