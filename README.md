@@ -32,6 +32,17 @@ overlays are excluded from the public snapshot.
 
 Demo video: [YouTube](https://youtu.be/AxVqIehVh1U)
 
+## Build X Season 2 Follow-Up
+
+The Season 2 Skills Arena follow-up extracted from this world is published as:
+
+- [Civilis Risk OS](https://github.com/CivilisAI/Civilis-Risk-OS)
+
+Read it as:
+
+- **Civilis** = the live multi-agent world
+- **Civilis Risk OS** = the reusable protection Skill extracted from that world
+
 ## Judge Quick Path
 
 If you only have a minute, verify Civilis in this order:
